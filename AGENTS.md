@@ -16,27 +16,29 @@
 - 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，以 Deep Agents 组装 Agent，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
 - Langfuse 用于追踪、离线评测和 Webhook；OpenSandbox 提供用户执行环境；MinIO 用于产物存储与交付；模型通过 OpenAI 兼容接口及自定义模型适配层调用。
 - 当前 `src` 中没有独立的 RAG 摄取、切分、向量索引或检索模块，不要仅凭目录名推断这些能力已经实现。
+- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录与 Docx 只读调用；尚未接入 Agent 或 RAG 流程，本地 Mock 测试不代表真实租户验证。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
 - `graphs` 保存手工构建的普通 LangGraph 图，不存放通过 LangChain 或 Deep Agents 创建的 Agent 图；当前包含可调度的清理图。调度计划由外部服务管理，代码中没有自动注册定时计划的逻辑。
 
 ## 架构与目录导航
 
-| 路径 | 职责 |
-| --- | --- |
-| `src/deal_pilot/agents` | Agent 工厂、主 Agent 状态、子 Agent 组装 |
-| `src/deal_pilot/app` | FastAPI 自定义路由、Langfuse Webhook |
-| `src/deal_pilot/config` | 环境配置；`nacos` 子目录负责远程资源读取与同步 |
-| `src/deal_pilot/security` | LangGraph 身份认证与资源授权 |
-| `src/deal_pilot/backends` | Deep Agents 后端到 OpenSandbox 的适配 |
-| `src/deal_pilot/tools` | 模型可调用的工具及注册表 |
-| `src/deal_pilot/middlewares` | Agent 执行阶段的状态处理 |
-| `src/deal_pilot/utils` | 模型、追踪、缓存、存储、沙箱等公共能力 |
-| `src/deal_pilot/benchmarks` | 数据集与实验；`evaluators` 子目录负责评分 |
-| `src/deal_pilot/graphs` | 手工构建的普通 LangGraph 图及其入口 |
-| `tests/units` | 本地单元测试，目前主要覆盖函数缓存 |
-| `tests/intergrations` | MinIO 与 Deploy 集成测试，保留现有目录拼写 |
-| `tests/benchmarks` | 依赖真实 Agent 和 Langfuse 的质量回归 |
-| `docker/sandbox/Dockerfile` | 沙箱镜像，包含部署所需的上传工具 |
+| 路径                         | 职责                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| `src/deal_pilot/agents`      | Agent 工厂、主 Agent 状态、子 Agent 组装                                  |
+| `src/deal_pilot/app`         | FastAPI 自定义路由、Langfuse Webhook                                      |
+| `src/deal_pilot/config`      | 环境配置；`nacos` 子目录负责远程资源读取与同步                            |
+| `src/deal_pilot/security`    | LangGraph 身份认证与资源授权                                              |
+| `src/deal_pilot/backends`    | Deep Agents 后端到 OpenSandbox 的适配                                     |
+| `src/deal_pilot/tools`       | 模型可调用的工具及注册表                                                  |
+| `src/deal_pilot/middlewares` | Agent 执行阶段的状态处理                                                  |
+| `src/deal_pilot/utils`       | 模型、追踪、缓存、存储、沙箱等公共能力                                    |
+| `src/deal_pilot/benchmarks`  | 数据集与实验；`evaluators` 子目录负责评分                                 |
+| `src/deal_pilot/graphs`      | 手工构建的普通 LangGraph 图及其入口                                       |
+| `src/deal_pilot/feishu`      | 官方 SDK 接入、知识空间/节点/Docx 读取、分页与错误处理；Token 由 SDK 管理 |
+| `tests/units`                | 函数缓存单元测试及飞书 Mock 单元测试                                      |
+| `tests/intergrations`        | MinIO 与 Deploy 集成测试，保留现有目录拼写                                |
+| `tests/benchmarks`           | 依赖真实 Agent 和 Langfuse 的质量回归                                     |
+| `docker/sandbox/Dockerfile`  | 沙箱镜像，包含部署所需的上传工具                                          |
 
 运行入口由 `langgraph.json` 定义：`main_agent` 指向追踪包装后的 Agent 工厂，`delete_old_trace` 指向清理图；鉴权入口是 `security.auth:auth`，自定义 HTTP 应用是 `app.main:app`。调整导出名称或模块路径时同步检查该文件。
 
@@ -45,22 +47,23 @@
 - 从项目根目录执行命令。Python 版本按 `pyproject.toml` 固定为 `3.13.11`，依赖使用 uv 管理，安装用 `uv sync`。
 - 配置项见 `.env.example` 和各 Settings 类。不要将实际 `.env` 内容、访问密钥或令牌写入文档、日志和测试输出。
 
-| 命令 | 用途与前提 |
-| --- | --- |
-| `make dev` | 启动 LangGraph 开发服务，端口 80；按配置依赖外部服务 |
-| `make debug` | 开发服务另开调试端口 5678 |
-| `make build TAG=<镜像标签>` | 构建 Agent 服务镜像 |
-| `make test-units` | 本地缓存单元测试，无需启动外部服务 |
-| `MINIO_INTEGRATION=1 uv run pytest -q tests/intergrations/test_minio.py` | 仅验证真实 MinIO，使用随机测试桶 |
-| `MINIO_INTEGRATION=1 DEPLOY_INTEGRATION=1 DEPLOY_SANDBOX_IMAGE=<已准备的镜像> uv run pytest -q tests/intergrations/test_deploy.py` | 真实 MinIO 与 OpenSandbox 部署验证 |
-| `make test-integrations` | 当前 Makefile 同时启用 MinIO 和 Deploy，并固定镜像为 `opensandbox-python-node:1.0` |
-| `make test-benchmark DS=<数据集名称>` | 对指定真实数据集评测，会调用 Agent 和模型并记录实验 |
-| `make test-benchmark DS=all` | 对全部数据集评测，注意调用量和费用 |
+| 命令                                                                                                                               | 用途与前提                                                                         |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `make dev`                                                                                                                         | 启动 LangGraph 开发服务，端口 80；按配置依赖外部服务                               |
+| `make debug`                                                                                                                       | 开发服务另开调试端口 5678                                                          |
+| `make build TAG=<镜像标签>`                                                                                                        | 构建 Agent 服务镜像                                                                |
+| `make test-units`                                                                                                                  | 本地缓存与飞书 Mock 单元测试，无需启动外部服务                                     |
+| `MINIO_INTEGRATION=1 uv run pytest -q tests/intergrations/test_minio.py`                                                           | 仅验证真实 MinIO，使用随机测试桶                                                   |
+| `MINIO_INTEGRATION=1 DEPLOY_INTEGRATION=1 DEPLOY_SANDBOX_IMAGE=<已准备的镜像> uv run pytest -q tests/intergrations/test_deploy.py` | 真实 MinIO 与 OpenSandbox 部署验证                                                 |
+| `make test-integrations`                                                                                                           | 当前 Makefile 同时启用 MinIO 和 Deploy，并固定镜像为 `opensandbox-python-node:1.0` |
+| `make test-benchmark DS=<数据集名称>`                                                                                              | 对指定真实数据集评测，会调用 Agent 和模型并记录实验                                |
+| `make test-benchmark DS=all`                                                                                                       | 对全部数据集评测，注意调用量和费用                                                 |
 
 `make docker-recreate` 会强制重建 Compose 容器，不是普通测试的准备步骤。集成测试不会替你启动服务或构建镜像；详细测试契约见 `tests/intergrations/README.md`，若其命令说明与 Makefile 不一致，以实际 Makefile 和测试启用条件为准。
 
 ## 全局修改与验证要求
 
+- 实现功能前先检查是否有适用的公开库，优先使用成熟、知名的库，尤其是官方库或官方 SDK；不要仅为了减少依赖而自行重写这些库已有的能力。确有不适用之处时，说明具体原因。需要新增安装库时，先向用户说明库名、用途和选择理由，获得用户明确许可后再添加依赖并安装；同一会话中已获许可的安装不重复询问，已有依赖可直接复用。
 - 遵循局部现有风格，新接口补充准确的类型标注；不要为了统一排版扩大修改范围。项目尚未定义统一 formatter/linter 配置，不虚构检查命令。
 - 异步路径使用异步客户端；同步 SDK 的阻塞调用需要适当隔离，例如 `asyncio.to_thread`。不要在已有事件循环内调用 `asyncio.run`。
 - 用户身份来自认证上下文；不得通过模型可填写的参数选择其他用户的沙箱或对象前缀。

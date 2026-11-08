@@ -28,6 +28,9 @@ course:
 test-benchmark:
 	BENCHMARK_DATASET="$(DS)" $(PYTHON) -m pytest -q -s --tb=no tests/benchmarks/test_benchmark.py
 
+test-units:
+	uv run pytest -q tests/units
+
 test-integrations: export MINIO_INTEGRATION := 1
 test-integrations: export DEPLOY_INTEGRATION := 1
 test-integrations: export DEPLOY_SANDBOX_IMAGE := opensandbox-python-node:1.0

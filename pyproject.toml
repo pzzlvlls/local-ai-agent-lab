@@ -19,6 +19,7 @@ dependencies = [
     "langgraph-api>=0.12.4",
     "langgraph-cli[inmem]>=0.4.31",
     "langgraph-sdk>=0.4.2",
+    "lark-oapi>=1.7.4",
     "numpy>=2.5.4",
     "opensandbox>=1.1.0",
     "pydantic>=2.13.4",

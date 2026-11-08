@@ -19,6 +19,7 @@
 - `config` 负责配置模型及获取，`security` 负责身份和授权；工具参数不能成为认证依据。
 - `backends` 负责 Deep Agents 协议适配，公共沙箱连接逻辑放 `utils/sandbox.py`。
 - `benchmarks` 负责实验编排，评分公式和结果 schema 放 `evaluators`，HTTP 处理放 `app`。
+- `feishu/api` 通过官方 lark-oapi SDK、以应用身份读取知识库与 Docx；完整同步 SDK 调用通过 asyncio.to_thread 隔离，直接复用 `config/feishu_settings.py`；没有接入 Agent 工具、结构化解析、索引或检索。
 - `utils` 只保留被其他模块复用的能力，不作为新增业务逻辑的默认归宿。
 
 ## 修改与验证
