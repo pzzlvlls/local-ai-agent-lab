@@ -12,7 +12,7 @@ from lark_oapi.core.cache import LocalCache
 from lark_oapi.core.token import TokenManager
 from pydantic import ValidationError
 
-from deal_pilot.feishu.api import DocxAPI, WikiAPI
+from deal_pilot.feishu.api import DocxAPI, ImageAPI, WikiAPI
 from deal_pilot.feishu.api import _client
 from deal_pilot.feishu.api.errors import (
     FeishuAPIError,
@@ -127,6 +127,64 @@ def test_get_space_node_and_docx_mapping_share_token(mock_feishu):
 
     asyncio.run(scenario())
     assert sum(r.method == "POST" for r in requests) == 1
+
+
+@pytest.mark.parametrize("mime", ["image/png", "image/jpeg; charset=binary", "IMAGE/WEBP"])
+def test_download_image_returns_bytes_and_mime_off_event_loop(mock_feishu, mime):
+    data = b"\x89PNG\x00\xff\r\n"
+
+    def handler(request):
+        assert request.url.path == "/open-apis/drive/v1/medias/image-token/download"
+        assert not request.url.params
+        return httpx.Response(200, content=data, headers={"Content-Type": mime})
+
+    requests, threads = mock_feishu(handler)
+    result = asyncio.run(ImageAPI().download_image("image-token"))
+    assert result.mime == mime.split(";", 1)[0].lower()
+    assert result.data == data
+    assert len(requests) == 2
+    assert all(t != threading.get_ident() for t in threads)
+
+
+@pytest.mark.parametrize("status", [200, 400, 403, 404, 429])
+def test_download_image_business_errors_are_not_binary_success(mock_feishu, status):
+    mock_feishu(lambda _: httpx.Response(
+        status, json={"code": 99991672, "msg": "fake-secret fake-token"},
+        headers={"X-Tt-Logid": "image-log"},
+    ))
+    with pytest.raises(FeishuAPIError) as caught:
+        asyncio.run(ImageAPI().download_image("image-token"))
+    assert (caught.value.code, caught.value.http_status, caught.value.log_id) == (99991672, status, "image-log")
+    assert "fake-secret" not in str(caught.value)
+
+
+@pytest.mark.parametrize("status", [403, 500, 503])
+def test_download_image_non_json_http_errors(mock_feishu, status):
+    mock_feishu(lambda _: httpx.Response(status, text="error"))
+    with pytest.raises(FeishuHTTPError) as caught:
+        asyncio.run(ImageAPI().download_image("image-token"))
+    assert caught.value.http_status == status
+
+
+@pytest.mark.parametrize("response", [
+    lambda: httpx.Response(200, content=b"png"),
+    lambda: httpx.Response(200, text="not an image"),
+    lambda: httpx.Response(200, json={"code": 0}),
+    lambda: httpx.Response(200, json={"code": False}),
+    lambda: httpx.Response(200, content=b"{", headers={"Content-Type": "application/json"}),
+])
+def test_download_image_rejects_invalid_response(mock_feishu, response):
+    mock_feishu(lambda _: response())
+    with pytest.raises(FeishuResponseError):
+        asyncio.run(ImageAPI().download_image("image-token"))
+
+
+@pytest.mark.parametrize("token", ["", " ", "a/b", "https://example.com/img"])
+def test_download_image_rejects_invalid_token_without_network(mock_feishu, token):
+    requests, _ = mock_feishu(lambda _: pytest.fail("不应调用 API"))
+    with pytest.raises(ValueError):
+        asyncio.run(ImageAPI().download_image(token))
+    assert requests == []
 
 
 @pytest.mark.parametrize("parent", [None, "parent"])

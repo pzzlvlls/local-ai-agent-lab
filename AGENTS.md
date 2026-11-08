@@ -16,30 +16,30 @@
 - 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，以 Deep Agents 组装 Agent，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
 - Langfuse 用于追踪、离线评测和 Webhook；OpenSandbox 提供用户执行环境；MinIO 用于产物存储与交付；模型通过 OpenAI 兼容接口及自定义模型适配层调用。
 - 当前 `src` 中没有独立的 RAG 摄取、切分、向量索引或检索模块，不要仅凭目录名推断这些能力已经实现。
-- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录与 Docx 只读调用；尚未接入 Agent 或 RAG 流程，本地 Mock 测试不代表真实租户验证。
+- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用与图片下载；尚未接入 Agent 或 RAG 流程，本地 Mock 测试不代表真实租户验证。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
 - `graphs` 保存手工构建的普通 LangGraph 图，不存放通过 LangChain 或 Deep Agents 创建的 Agent 图；当前包含可调度的清理图。调度计划由外部服务管理，代码中没有自动注册定时计划的逻辑。
 
 ## 架构与目录导航
 
-| 路径                                      | 职责                                                                                                                         |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装                                                                                     |
-| `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook                                                                                         |
-| `src/deal_pilot/config`                   | 环境配置；`nacos` 子目录负责远程资源读取与同步                                                                               |
-| `src/deal_pilot/security`                 | LangGraph 身份认证与资源授权                                                                                                 |
-| `src/deal_pilot/backends`                 | Deep Agents 后端到 OpenSandbox 的适配                                                                                        |
-| `src/deal_pilot/tools`                    | 模型可调用的工具及注册表                                                                                                     |
-| `src/deal_pilot/middlewares`              | Agent 执行阶段的状态处理                                                                                                     |
-| `src/deal_pilot/utils`                    | 模型、追踪、缓存、存储、沙箱等公共能力                                                                                       |
-| `src/deal_pilot/benchmarks`               | 数据集与实验；`evaluators` 子目录负责评分                                                                                    |
-| `src/deal_pilot/graphs`                   | 手工构建的普通 LangGraph 图及其入口                                                                                          |
-| `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、分页与错误处理；Token 由 SDK 管理                                                    |
-| `src/deal_pilot/rag/structure/feishu_doc` | 异步构树、原始关系校验、标题归组、内容及元数据提取；完整树构建后并发调用图片处理函数（当前为占位），尚未接入切分、索引或检索 |
-| `tests/units`                             | 函数缓存、飞书 Mock 及文档构树单元测试                                                                                       |
-| `tests/intergrations`                     | MinIO 与 Deploy 集成测试，保留现有目录拼写                                                                                   |
-| `tests/benchmarks`                        | 依赖真实 Agent 和 Langfuse 的质量回归                                                                                        |
-| `docker/sandbox/Dockerfile`               | 沙箱镜像，包含部署所需的上传工具                                                                                             |
+| 路径                                      | 职责                                                                                                                                                                                |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装                                                                                                                                            |
+| `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook                                                                                                                                                |
+| `src/deal_pilot/config`                   | 环境配置；`nacos` 子目录负责远程资源读取与同步                                                                                                                                      |
+| `src/deal_pilot/security`                 | LangGraph 身份认证与资源授权                                                                                                                                                        |
+| `src/deal_pilot/backends`                 | Deep Agents 后端到 OpenSandbox 的适配                                                                                                                                               |
+| `src/deal_pilot/tools`                    | 模型可调用的工具及注册表                                                                                                                                                            |
+| `src/deal_pilot/middlewares`              | Agent 执行阶段的状态处理                                                                                                                                                            |
+| `src/deal_pilot/utils`                    | 模型、追踪、缓存、存储、沙箱等公共能力                                                                                                                                              |
+| `src/deal_pilot/benchmarks`               | 数据集与实验；`evaluators` 子目录负责评分                                                                                                                                           |
+| `src/deal_pilot/graphs`                   | 手工构建的普通 LangGraph 图及其入口                                                                                                                                                 |
+| `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、图片下载、分页与错误处理；Token 由 SDK 管理                                                                                                 |
+| `src/deal_pilot/rag/structure/feishu_doc` | 异步构树、原始关系校验、标题归组、内容及元数据提取；完整树构建后按文档顺序串行调用图片处理占位函数；提供 Data URL、私有图片上传及上下文辅助函数，尚未接入模型识图、切分、索引或检索 |
+| `tests/units`                             | 函数缓存、飞书 Mock 及文档构树单元测试                                                                                                                                              |
+| `tests/intergrations`                     | MinIO 与 Deploy 集成测试，保留现有目录拼写                                                                                                                                          |
+| `tests/benchmarks`                        | 依赖真实 Agent 和 Langfuse 的质量回归                                                                                                                                               |
+| `docker/sandbox/Dockerfile`               | 沙箱镜像，包含部署所需的上传工具                                                                                                                                                    |
 
 运行入口由 `langgraph.json` 定义：`main_agent` 指向追踪包装后的 Agent 工厂，`delete_old_trace` 指向清理图；鉴权入口是 `security.auth:auth`，自定义 HTTP 应用是 `app.main:app`。调整导出名称或模块路径时同步检查该文件。
 

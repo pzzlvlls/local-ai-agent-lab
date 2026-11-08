@@ -32,3 +32,16 @@ class OpenSandboxConfig(BaseModel):
     timeout_seconds: int = Field(default=600, gt=0)
     ready_timeout_seconds: int = Field(default=180, gt=0)
     command_timeout_seconds: int = Field(default=90, gt=0)
+
+
+class RagImageParser(BaseModel):
+    bucket_name: str = Field(
+        description="配置待索引的图像所在的桶名", default="feishu-images"
+    )
+    sibling_count: int = Field(
+        description="参与图像上下文前后兄弟节点的数量", default=3
+    )
+
+
+class RagConfig(BaseModel):
+    image_parser: RagImageParser = Field(default_factory=RagImageParser)

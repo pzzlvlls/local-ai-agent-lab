@@ -3,17 +3,20 @@
 import asyncio
 import json
 import os
-import sys
 from datetime import timedelta
 from functools import wraps
 from io import BytesIO
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
+from unittest.mock import AsyncMock
 
 import pytest
 from botocore.exceptions import ClientError
 
 from deal_pilot.utils.minio import CacheStrategy, ContentTypeStrategy, UploadDirResult
+from deal_pilot.config.nacos.nacos_schemas import RagConfig, RagImageParser
+from deal_pilot.rag.structure.feishu_doc import image_parser
 
 
 def live_test(test):
@@ -32,6 +35,108 @@ def assert_counts(result, total, success, failed):
     assert (result.total_count, result.success_count, result.failure_count) == (total, success, failed)
     assert result.total_count == result.success_count + result.failure_count
     assert result.failure_count == len(result.failures)
+
+
+@live_test
+async def test_upload_bytes_preserves_data_overwrites_and_sets_explicit_mime(minio_env):
+    bucket = await minio_env.private_bucket()
+    client = minio_env.client(
+        cache_strategy=[CacheStrategy([".png"], max_age=120)],
+        content_type_strategy=ContentTypeStrategy(extensions={".png": "image/ignored"}),
+    )
+    for data in [b"\x00\xff\x89PNG\r\n", b"", b"overwritten"]:
+        await client.upload_bytes(bucket_name=bucket, filename="/图片.png", data=data, mime="image/webp")
+        assert await minio_env.get(bucket, "图片.png") == data
+        head = await minio_env.raw.head_object(Bucket=bucket, Key="图片.png")
+        assert head["ContentType"] == "image/webp"
+        assert head["CacheControl"] == "max-age=120"
+    assert (await minio_env.http.get(client.get_file_url(bucket_name=bucket, filename="图片.png"))).status_code == 403
+    missing = minio_env.new_bucket()
+    with pytest.raises(ClientError) as caught:
+        await client.upload_bytes(bucket_name=missing, filename="image.png", data=b"data", mime="image/png")
+    assert caught.value.response["Error"]["Code"] == "NoSuchBucket"
+    assert not await client.bucket_exists(missing)
+
+
+@pytest.mark.parametrize("args", [
+    {"data": "text"}, {"data": bytearray(b"data")}, {"mime": ""}, {"mime": "image/png\r\nx: y"},
+    {"filename": "/"}, {"bucket_name": "INVALID"},
+])
+@live_test
+async def test_upload_bytes_invalid_parameters_leave_bucket_unchanged(minio_env, args):
+    bucket = await minio_env.private_bucket()
+    values = dict(bucket_name=bucket, filename="image.png", data=b"data", mime="image/png")
+    with pytest.raises(ValueError):
+        await minio_env.client().upload_bytes(**(values | args))
+    assert await minio_env.keys(bucket) == []
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@live_test
+async def test_image_upload_minio_private_bucket_root_and_mime(minio_env, monkeypatch, existing):
+    bucket = await minio_env.private_bucket() if existing else minio_env.new_bucket()
+    # 只替换配置来源，建桶、权限检查、上传及独立 SDK/匿名 HTTP 验证均访问真实 MinIO。
+    config = AsyncMock(return_value=RagConfig(image_parser=RagImageParser(bucket_name=bucket)))
+    monkeypatch.setattr(image_parser, "get_config", config)
+    monkeypatch.setattr(image_parser, "minio_settings", SimpleNamespace(**minio_env.config))
+    for mime, extension in [("image/png", ".png"), ("image/jpeg", ".jpg"), ("image/webp", ".webp")]:
+        result = await image_parser._upload_minio(b"image bytes", mime, "block-id")
+        assert result.model_dump() == {"bucket_name": bucket, "filename": "block-id" + extension}
+        assert await minio_env.get(bucket, result.filename) == b"image bytes"
+        head = await minio_env.raw.head_object(Bucket=bucket, Key=result.filename)
+        assert head["ContentType"] == mime
+        url = minio_env.client().get_file_url(bucket_name=bucket, filename=result.filename)
+        assert (await minio_env.http.get(url)).status_code == 403
+    assert await minio_env.keys(bucket) == ["block-id.jpg", "block-id.png", "block-id.webp"]
+    config.assert_awaited_with("rag_config", RagConfig)
+
+
+@pytest.mark.parametrize("action", ["s3:GetObject", "s3:Get*", "s3:*"])
+@live_test
+async def test_image_upload_minio_rejects_public_bucket_without_changing_policy(minio_env, monkeypatch, action):
+    bucket = minio_env.new_bucket()
+    client = minio_env.client()
+    await client.create_bucket(bucket)
+    await minio_env.put(bucket, "keep.png", b"existing public content")
+    await minio_env.raw.put_bucket_policy(Bucket=bucket, Policy=json.dumps({
+        "Version": "2012-10-17", "Statement": [{
+            "Effect": "Allow", "Principal": "*", "Action": action,
+            "Resource": f"arn:aws:s3:::{bucket}/*",
+        }],
+    }))
+    url = client.get_file_url(bucket_name=bucket, filename="keep.png")
+    assert (await minio_env.http.get(url)).status_code == 200
+    policy = (await minio_env.raw.get_bucket_policy(Bucket=bucket))["Policy"]
+    monkeypatch.setattr(image_parser, "get_config", AsyncMock(return_value=RagConfig(
+        image_parser=RagImageParser(bucket_name=bucket),
+    )))
+    monkeypatch.setattr(image_parser, "minio_settings", SimpleNamespace(**minio_env.config))
+    with pytest.raises(ValueError, match="禁用公共读"):
+        await image_parser._upload_minio(b"private content", "image/png", "new-image")
+    assert await minio_env.keys(bucket) == ["keep.png"]
+    assert (await minio_env.raw.get_bucket_policy(Bucket=bucket))["Policy"] == policy
+    assert await minio_env.get(bucket, "keep.png") == b"existing public content"
+
+
+@live_test
+async def test_image_upload_minio_preserves_non_read_bucket_policy(minio_env, monkeypatch):
+    bucket = await minio_env.private_bucket()
+    await minio_env.raw.put_bucket_policy(Bucket=bucket, Policy=json.dumps({
+        "Version": "2012-10-17", "Statement": [{
+            "Effect": "Allow", "Principal": "*", "Action": "s3:GetBucketLocation",
+            "Resource": f"arn:aws:s3:::{bucket}",
+        }],
+    }))
+    policy = (await minio_env.raw.get_bucket_policy(Bucket=bucket))["Policy"]
+    monkeypatch.setattr(image_parser, "get_config", AsyncMock(return_value=RagConfig(
+        image_parser=RagImageParser(bucket_name=bucket),
+    )))
+    monkeypatch.setattr(image_parser, "minio_settings", SimpleNamespace(**minio_env.config))
+    result = await image_parser._upload_minio(b"private content", "image/png", "image")
+    assert await minio_env.get(bucket, result.filename) == b"private content"
+    assert (await minio_env.raw.get_bucket_policy(Bucket=bucket))["Policy"] == policy
+    url = minio_env.client().get_file_url(bucket_name=bucket, filename=result.filename)
+    assert (await minio_env.http.get(url)).status_code == 403
 
 
 @live_test
@@ -239,10 +344,6 @@ async def test_invalid_credentials_propagate_service_errors(minio_env, method):
     assert await minio_env.get(bucket, "data") == b"fixture"
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="符号链接需要 SeCreateSymbolicLinkPrivilege，且 Windows 无 os.mkfifo，场景依赖 POSIX",
-)
 @pytest.mark.parametrize("prefix", ["", "/", "assets", "/assets///"])
 @live_test
 async def test_upload_dir_structure_hidden_files_links_and_overwrite(minio_env, tmp_path, prefix):

@@ -7,6 +7,7 @@ from functools import lru_cache
 
 import lark_oapi as lark
 from lark_oapi.api.docx.v1.version import V1 as DocxV1
+from lark_oapi.api.drive.v1.version import V1 as DriveV1
 from lark_oapi.api.wiki.v2.version import V2 as WikiV2
 from lark_oapi.core.exception import ObtainAccessTokenException, UnmarshalException
 from lark_oapi.core.model import BaseResponse
@@ -47,6 +48,12 @@ def docx_client() -> DocxV1:
     return client.docx.v1
 
 
+def drive_client() -> DriveV1:
+    client = _client()
+    assert client.drive is not None
+    return client.drive.v1
+
+
 def resource_id(value: str, name: str) -> str:
     """校验单个资源标识；路径编码由 SDK 处理。"""
     if not isinstance(value, str) or not value or value.strip() != value:
@@ -62,7 +69,7 @@ def object_value(value: JsonValue, name: str) -> dict[str, JsonValue]:
     return value
 
 
-async def sdk_call(operation: Callable[[], BaseResponse]) -> dict[str, JsonValue]:
+async def sdk_response[T: BaseResponse](operation: Callable[[], T]) -> T:
     """完整 SDK 调用在线程中执行，包括同步鉴权；Token 获取与缓存交给 SDK。"""
     try:
         response = await asyncio.to_thread(operation)
@@ -83,6 +90,14 @@ async def sdk_call(operation: Callable[[], BaseResponse]) -> dict[str, JsonValue
         raise FeishuAPIError(response.code, raw.status_code, log_id)
     if not 200 <= raw.status_code < 300:
         raise FeishuHTTPError(raw.status_code, log_id)
+    return response
+
+
+async def sdk_call(operation: Callable[[], BaseResponse]) -> dict[str, JsonValue]:
+    """校验 JSON 业务响应，保留 SDK 模型未声明的原始字段。"""
+    response = await sdk_response(operation)
+    raw = response.raw
+    assert raw is not None
     if raw.content is None:
         raise FeishuResponseError("飞书 SDK 响应缺少原始内容")
     # SDK 模型会忽略未声明字段；从 raw 保留完整块数据及未来新增字段。

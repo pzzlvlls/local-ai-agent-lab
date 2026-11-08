@@ -2,18 +2,18 @@
 
 ## 职责与入口
 
-| 文件 | 职责 |
-| --- | --- |
-| `shared.py` | 从 LangGraph configurable 读取 thread_id 和认证用户 ID |
-| `create_model.py`、`reasoning_chat_model.py` | 模型创建、会话路由头和 reasoning 响应适配 |
-| `trace_wrapper.py` | Agent 工厂的 Langfuse 追踪包装 |
-| `func_tools.py` | 同步与异步函数的进程内缓存 |
-| `sandbox.py` | 沙箱连接、创建、复用和共享维护沙箱 |
-| `minio.py` | 独立的异步 MinIO 客户端 |
-| `langfuse_signature.py` | Webhook HMAC 验签 |
-| `get_prompt.py` | 将 Langfuse 同步 Prompt 读取隔离到线程 |
-| `cleanup_expired_traces.py` | 按保留期提交 trace 删除请求 |
-| `mock_user.py` | 本地模拟身份数据，不能当作生产用户中心 |
+| 文件                                         | 职责                                                   |
+| -------------------------------------------- | ------------------------------------------------------ |
+| `shared.py`                                  | 从 LangGraph configurable 读取 thread_id 和认证用户 ID |
+| `create_model.py`、`reasoning_chat_model.py` | 模型创建、会话路由头和 reasoning 响应适配              |
+| `trace_wrapper.py`                           | Agent 工厂的 Langfuse 追踪包装                         |
+| `func_tools.py`                              | 同步与异步函数的进程内缓存                             |
+| `sandbox.py`                                 | 沙箱连接、创建、复用和共享维护沙箱                     |
+| `minio.py`                                   | 独立的异步 MinIO 客户端                                |
+| `langfuse_signature.py`                      | Webhook HMAC 验签                                      |
+| `get_prompt.py`                              | 将 Langfuse 同步 Prompt 读取隔离到线程                 |
+| `cleanup_expired_traces.py`                  | 按保留期提交 trace 删除请求                            |
+| `mock_user.py`                               | 本地模拟身份数据，不能当作生产用户中心                 |
 
 ## 身份、模型与追踪
 
@@ -45,6 +45,8 @@
 - `upload_dir` 保留相对路径，跳过符号链接及非普通文件，扫描完成才开始上传，单文件错误汇总并继续；不删除额外远程对象，已上传内容不回滚。
 - `UploadDirResult.failures` 使用相对源目录的路径；保持 `total_count=success_count+failure_count` 和 `failure_count=len(failures)`。Deploy 再将失败路径转换为沙箱绝对路径。
 - 缓存及 Content-Type 策略按目标对象键匹配，只影响新上传。永久 URL 不代表私有对象可匿名读取；预签名 URL 不预检查对象存在或改变桶权限。
+- `upload_bytes(*, bucket_name, filename, data: bytes, mime: str) -> None` 直接上传原始字节，空数据、对象键、覆盖、缓存与错误语义沿用 upload_file；
+  显式 mime 设置 Content-Type，优先于构造器的后缀策略；不隐式建桶或修改权限，仍只依赖 aiobotocore 和标准库。
 - 桶强制删除必须处理对象版本和删除标记；不要通过忽略服务端错误把清理报告为成功。
 
 ## 验签、清理与验证

@@ -436,6 +436,26 @@ class MinIO:
                     Bucket=bucket_name, Key=filename, Body=body, **self._metadata(filename),
                 )
 
+    async def upload_bytes(
+        self,
+        *,
+        bucket_name: str,
+        filename: str,
+        data: bytes,
+        mime: str,
+    ) -> None:
+        """直接上传字节，覆盖、缓存、建桶及错误约定与 upload_file 相同。
+
+        空字节允许上传；Content-Type 使用显式 mime，覆盖后缀映射。
+        """
+        bucket_name, filename = _bucket(bucket_name), _key(filename)
+        if not isinstance(data, bytes):
+            raise ValueError("data 必须是 bytes")
+        metadata = self._metadata(filename)
+        metadata["ContentType"] = _content_type(mime)
+        async with self._client() as client:
+            await client.put_object(Bucket=bucket_name, Key=filename, Body=data, **metadata)
+
     @staticmethod
     def _local_path(value: str) -> str:
         try:

@@ -5,6 +5,13 @@ from typing import Literal
 from pydantic import BaseModel, Field, JsonValue
 
 
+class DownloadedImage(BaseModel):
+    """下载的图片 MIME 类型及原始字节。"""
+
+    mime: str
+    data: bytes
+
+
 class WikiSpace(BaseModel):
     """知识空间基本信息。"""
 

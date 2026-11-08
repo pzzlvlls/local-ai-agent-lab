@@ -464,7 +464,7 @@ def test_image_root_is_processed_in_place(mock_image_parser: AsyncMock) -> None:
     assert root.payload == {"processed": True}
 
 
-def test_all_images_run_concurrently_after_complete_tree_is_built(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_all_images_run_serially_in_document_order_after_complete_tree_is_built(monkeypatch: pytest.MonkeyPatch) -> None:
     sources = [
         block("doc", children=["heading", "image-a", "table", "image-c", "tail"], block_type=1),
         block("heading", "doc", block_type=3),
@@ -480,7 +480,7 @@ def test_all_images_run_concurrently_after_complete_tree_is_built(monkeypatch: p
     async def scenario() -> None:
         started: dict[str, BlockNode] = {}
         finished: set[str] = set()
-        all_started = asyncio.Event()
+        order = ["image-a", "image-b", "image-c"]
 
         async def parse(node: BlockNode) -> None:
             root = node
@@ -492,11 +492,14 @@ def test_all_images_run_concurrently_after_complete_tree_is_built(monkeypatch: p
                 "image-a", "table", "image-c", "tail",
             ]
             assert node.block_id not in started
+            assert list(started) == order[:len(started)]
+            assert set(started) == finished
+            for previous in started.values():
+                assert previous.content == f"processed-{previous.block_id}"
             started[node.block_id] = node
-            if len(started) == 3:
-                all_started.set()
-            # 串行实现会停在这里；所有图片都开始处理后才允许任意一次结束。
-            await all_started.wait()
+            # 让出控制权后仍只能有当前图片在执行。
+            await asyncio.sleep(0)
+            assert list(started) == order[:order.index(node.block_id) + 1]
             token = node.content
             node.content = f"processed-{node.block_id}"
             node.payload.update({"token": token, "processed": True})
@@ -504,6 +507,7 @@ def test_all_images_run_concurrently_after_complete_tree_is_built(monkeypatch: p
 
         monkeypatch.setattr(image_parser, "parse_image_block", parse)
         root = await asyncio.wait_for(build_tree(sources), timeout=2)
+        assert list(started) == order
         assert set(started) == finished == {"image-a", "image-b", "image-c"}
         heading = root.children[0]
         images = [heading.children[0], heading.children[1].children[0].children[0], heading.children[2]]
@@ -523,6 +527,18 @@ def test_image_parser_errors_and_cancellation_propagate(error: BaseException, mo
     with pytest.raises(type(error)) as captured:
         asyncio.run(build_tree([block("image", block_type=27, image={"token": "token"})]))
     assert captured.value is error
+    mock_image_parser.assert_awaited_once()
+
+
+@pytest.mark.parametrize("error", [RuntimeError("图片处理失败"), asyncio.CancelledError()])
+def test_image_failure_stops_before_next_image(error: BaseException, mock_image_parser: AsyncMock) -> None:
+    mock_image_parser.side_effect = error
+    with pytest.raises(type(error)):
+        asyncio.run(build_tree([
+            block("doc", children=["a", "b"]),
+            block("a", "doc", block_type=27, image={"token": "a"}),
+            block("b", "doc", block_type=27, image={"token": "b"}),
+        ]))
     mock_image_parser.assert_awaited_once()
 
 

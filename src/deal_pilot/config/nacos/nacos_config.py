@@ -8,7 +8,7 @@ import httpx
 from deal_pilot.config.nacos.nacos_access_token import get_access_token
 import yaml
 
-type ConfigName = Literal["sandbox_config"]
+type ConfigName = Literal["sandbox_config", "rag_config"]
 _GROUP_NAME = "deal_pilot"
 
 

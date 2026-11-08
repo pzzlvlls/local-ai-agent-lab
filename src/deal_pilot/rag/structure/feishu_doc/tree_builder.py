@@ -1,6 +1,5 @@
 """将完整的飞书 DocxBlock 列表构建为按标题层级组织的有序树。"""
 
-import asyncio
 from copy import deepcopy
 
 from pydantic import JsonValue
@@ -40,9 +39,9 @@ async def build_tree(blocks: list[DocxBlock]) -> BlockNode:
     merge_info（仅保留来源中存在的字段），其他节点为空字典。
     文本块 content 为按 elements 顺序提取的本节点纯文本；图片 content
     保存 image.token；无自身文本的容器等节点为空字符串。
-    完成整棵树后，只沿 children 遍历并收集全部图片节点，再并发调用
-    image_parser.parse_image_block；该函数原地更新节点，等待全部完成后
-    返回根节点。图片处理的异常及取消向调用方传播。
+    完成整棵树后，只沿 children 按文档顺序收集全部图片节点，再串行调用
+    image_parser.parse_image_block；该函数原地更新节点，等待当前图片完成
+    再处理下一张，全部完成后返回根节点。图片处理的异常及取消向调用方传播。
     不修改输入，也不拼接子节点内容；图片处理行为由 image_parser 决定。
 
     空输入、空/重复 ID、非唯一根、缺失块、父子关系冲突、重复挂载、环、
@@ -76,8 +75,8 @@ async def build_tree(blocks: list[DocxBlock]) -> BlockNode:
         if node.block_type == BlockType.IMAGE:
             images.append(node)
         pending.extend(reversed(node.children))
-    if images:
-        await asyncio.gather(*(image_parser.parse_image_block(node) for node in images))
+    for node in images:
+        await image_parser.parse_image_block(node)
     return root
 
 
