@@ -22,23 +22,24 @@
 
 ## 架构与目录导航
 
-| 路径                         | 职责                                                                      |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| `src/deal_pilot/agents`      | Agent 工厂、主 Agent 状态、子 Agent 组装                                  |
-| `src/deal_pilot/app`         | FastAPI 自定义路由、Langfuse Webhook                                      |
-| `src/deal_pilot/config`      | 环境配置；`nacos` 子目录负责远程资源读取与同步                            |
-| `src/deal_pilot/security`    | LangGraph 身份认证与资源授权                                              |
-| `src/deal_pilot/backends`    | Deep Agents 后端到 OpenSandbox 的适配                                     |
-| `src/deal_pilot/tools`       | 模型可调用的工具及注册表                                                  |
-| `src/deal_pilot/middlewares` | Agent 执行阶段的状态处理                                                  |
-| `src/deal_pilot/utils`       | 模型、追踪、缓存、存储、沙箱等公共能力                                    |
-| `src/deal_pilot/benchmarks`  | 数据集与实验；`evaluators` 子目录负责评分                                 |
-| `src/deal_pilot/graphs`      | 手工构建的普通 LangGraph 图及其入口                                       |
-| `src/deal_pilot/feishu`      | 官方 SDK 接入、知识空间/节点/Docx 读取、分页与错误处理；Token 由 SDK 管理 |
-| `tests/units`                | 函数缓存单元测试及飞书 Mock 单元测试                                      |
-| `tests/intergrations`        | MinIO 与 Deploy 集成测试，保留现有目录拼写                                |
-| `tests/benchmarks`           | 依赖真实 Agent 和 Langfuse 的质量回归                                     |
-| `docker/sandbox/Dockerfile`  | 沙箱镜像，包含部署所需的上传工具                                          |
+| 路径                                      | 职责                                                                                                                         |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装                                                                                     |
+| `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook                                                                                         |
+| `src/deal_pilot/config`                   | 环境配置；`nacos` 子目录负责远程资源读取与同步                                                                               |
+| `src/deal_pilot/security`                 | LangGraph 身份认证与资源授权                                                                                                 |
+| `src/deal_pilot/backends`                 | Deep Agents 后端到 OpenSandbox 的适配                                                                                        |
+| `src/deal_pilot/tools`                    | 模型可调用的工具及注册表                                                                                                     |
+| `src/deal_pilot/middlewares`              | Agent 执行阶段的状态处理                                                                                                     |
+| `src/deal_pilot/utils`                    | 模型、追踪、缓存、存储、沙箱等公共能力                                                                                       |
+| `src/deal_pilot/benchmarks`               | 数据集与实验；`evaluators` 子目录负责评分                                                                                    |
+| `src/deal_pilot/graphs`                   | 手工构建的普通 LangGraph 图及其入口                                                                                          |
+| `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、分页与错误处理；Token 由 SDK 管理                                                    |
+| `src/deal_pilot/rag/structure/feishu_doc` | 异步构树、原始关系校验、标题归组、内容及元数据提取；完整树构建后并发调用图片处理函数（当前为占位），尚未接入切分、索引或检索 |
+| `tests/units`                             | 函数缓存、飞书 Mock 及文档构树单元测试                                                                                       |
+| `tests/intergrations`                     | MinIO 与 Deploy 集成测试，保留现有目录拼写                                                                                   |
+| `tests/benchmarks`                        | 依赖真实 Agent 和 Langfuse 的质量回归                                                                                        |
+| `docker/sandbox/Dockerfile`               | 沙箱镜像，包含部署所需的上传工具                                                                                             |
 
 运行入口由 `langgraph.json` 定义：`main_agent` 指向追踪包装后的 Agent 工厂，`delete_old_trace` 指向清理图；鉴权入口是 `security.auth:auth`，自定义 HTTP 应用是 `app.main:app`。调整导出名称或模块路径时同步检查该文件。
 
@@ -52,7 +53,7 @@
 | `make dev`                                                                                                                         | 启动 LangGraph 开发服务，端口 80；按配置依赖外部服务                               |
 | `make debug`                                                                                                                       | 开发服务另开调试端口 5678                                                          |
 | `make build TAG=<镜像标签>`                                                                                                        | 构建 Agent 服务镜像                                                                |
-| `make test-units`                                                                                                                  | 本地缓存与飞书 Mock 单元测试，无需启动外部服务                                     |
+| `make test-units`                                                                                                                  | 本地缓存、飞书 Mock 及文档构树单元测试，无需启动外部服务                           |
 | `MINIO_INTEGRATION=1 uv run pytest -q tests/intergrations/test_minio.py`                                                           | 仅验证真实 MinIO，使用随机测试桶                                                   |
 | `MINIO_INTEGRATION=1 DEPLOY_INTEGRATION=1 DEPLOY_SANDBOX_IMAGE=<已准备的镜像> uv run pytest -q tests/intergrations/test_deploy.py` | 真实 MinIO 与 OpenSandbox 部署验证                                                 |
 | `make test-integrations`                                                                                                           | 当前 Makefile 同时启用 MinIO 和 Deploy，并固定镜像为 `opensandbox-python-node:1.0` |
