@@ -41,6 +41,10 @@ class RagImageParser(BaseModel):
     sibling_count: int = Field(
         description="参与图像上下文前后兄弟节点的数量", default=3
     )
+    vl_model_config: AgentModelConfig = Field(
+        description="描述图片的模型配置", default_factory=AgentModelConfig
+    )
+    image_parser_prompt: str = Field(default="image_parser_prompt")
 
 
 class RagConfig(BaseModel):
