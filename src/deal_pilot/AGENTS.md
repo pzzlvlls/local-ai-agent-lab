@@ -22,6 +22,7 @@
 - `feishu/api` 通过官方 lark-oapi SDK、以应用身份读取知识库、Docx 与下载文档图片；完整同步 SDK 调用通过 asyncio.to_thread 隔离，直接复用 `config/feishu_settings.py`；没有接入 Agent 工具、结构化解析、索引或检索。
 - `rag/structure/feishu_doc` 独立提供 `DocxBlock` 列表的原始关系校验和按标题层级构树；异步 `build_tree` 在完整树构建后按文档顺序串行调用图片处理占位函数，等待完成再返回；另有 Data URL、MinIO 私有图片上传及上下文提取辅助函数，尚未编排调用或接入模型识图。content 初始提取纯文本或图片 token，payload 保存代码语言或表格行列数、合并信息；尚未接入 Agent 或实现切分、索引及检索。
 - `rag/loader/feishu_doc` 将已有标准树提取为 LangChain Documents；页面、标题、图片、表格和代码分别成文档，父文档保留正文和子文档占位引用。仅本地转换，不读取飞书、不重新构树或按长度切片。
+- `rag/splitter/feishu_doc` 对 loader 结果进一步切片：图片/代码不拆，表格首行表头加单行，页面/章节复用 LangChain 递归切分并保护占位符。切片新增序号与总数，block_id、parent_document_id 等保留来源结构含义；不执行向量化或入库。
 - `utils` 只保留被其他模块复用的能力，不作为新增业务逻辑的默认归宿。
 
 ## 修改与验证
