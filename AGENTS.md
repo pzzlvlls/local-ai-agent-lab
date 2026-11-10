@@ -16,6 +16,7 @@
 - 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，以 Deep Agents 组装 Agent，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
 - Langfuse 用于追踪、离线评测和 Webhook；OpenSandbox 提供用户执行环境；MinIO 用于产物存储与交付；模型通过 OpenAI 兼容接口及自定义模型适配层调用。
 - 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；尚未实现向量索引或检索，不要仅凭目录名推断这些能力已经实现。
+- 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。课件通过 PyMilvus 连接，不依赖 Milvus Lite；这不表示 RAG 源码已经接入向量数据库。
 - `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用与图片下载；尚未接入 Agent 或 RAG 流程，本地 Mock 测试不代表真实租户验证。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
 - `graphs` 保存手工构建的普通 LangGraph 图，不存放通过 LangChain 或 Deep Agents 创建的 Agent 图；当前包含可调度的清理图。调度计划由外部服务管理，代码中没有自动注册定时计划的逻辑。
@@ -54,6 +55,7 @@
 | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `make dev`                                                                                                                         | 启动 LangGraph 开发服务，端口 80；按配置依赖外部服务                                    |
 | `make debug`                                                                                                                       | 开发服务另开调试端口 5678                                                               |
+| `docker compose up -d --wait milvus`                                                                                               | 仅启动 Milvus Standalone 及其专用 etcd、MinIO，并等待健康检查                           |
 | `make build TAG=<镜像标签>`                                                                                                        | 构建 Agent 服务镜像                                                                     |
 | `make test-units`                                                                                                                  | 本地缓存、飞书 Mock、文档构树、Documents 结构提取及进一步切片单元测试，无需启动外部服务 |
 | `MINIO_INTEGRATION=1 uv run pytest -q tests/intergrations/test_minio.py`                                                           | 仅验证真实 MinIO，使用随机测试桶                                                        |
@@ -63,6 +65,8 @@
 | `make test-benchmark DS=all`                                                                                                       | 对全部数据集评测，注意调用量和费用                                                      |
 
 `make docker-recreate` 会强制重建 Compose 容器，不是普通测试的准备步骤。集成测试不会替你启动服务或构建镜像；详细测试契约见 `tests/intergrations/README.md`，若其命令说明与 Makefile 不一致，以实际 Makefile 和测试启用条件为准。
+
+Milvus SDK 端口为 `127.0.0.1:19530`，健康检查及 WebUI 为 `127.0.0.1:9091`；专用 MinIO API / 控制台为 `127.0.0.1:19000` / `127.0.0.1:19001`。Milvus 容器设置 `TZ=Asia/Shanghai` 使用东八区；WebUI 日期显示需另行核对，不能仅凭容器时区推断。当前是未启用 Milvus 身份认证的本地开发部署，MinIO 凭据不用于 Milvus 登录。部署修改检查 Compose 配置、服务健康和实际 SDK 读写；不要用 `down -v` 清理测试。新命名卷利用镜像目录的 UID/GID `999:999` 初始化权限，恢复外部数据卷后需另行核对所有权。
 
 ## 全局修改与验证要求
 

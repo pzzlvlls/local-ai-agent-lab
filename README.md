@@ -28,6 +28,17 @@ make dev
 make debug
 ```
 
+**只启动 Milvus Standalone**
+
+```shell
+docker compose up -d --wait milvus
+docker compose ps milvus milvus-etcd milvus-minio
+curl --fail http://127.0.0.1:9091/healthz
+```
+
+使用 Milvus `v3.0.2`，同时启动专用 etcd 和 MinIO；此命令不会启动其他基础设施服务。
+课件 `课件/18. Milvus.ipynb` 使用现有 PyMilvus 客户端连接该服务，无需安装 `milvus-lite`。
+
 ## 服务说明
 
 ### 常用服务
@@ -76,7 +87,23 @@ make debug
 
   宿主机访问 API：http://localhost:9002
 
+- **Milvus Standalone**
+
+  SDK 连接地址：http://127.0.0.1:19530
+
+  WebUI：http://127.0.0.1:9091/webui/
+
+  健康检查：http://127.0.0.1:9091/healthz
+
 ### 不常用服务
+
+- Milvus 专用 MinIO
+
+  控制台：http://localhost:19001
+
+  对象存储 API：http://127.0.0.1:19000
+
+  本地练习账号 / 密码：`minioadmin` / `minioadmin`
 
 - Langfuse MinIO 管理后台
 

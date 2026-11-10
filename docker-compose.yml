@@ -243,6 +243,78 @@ services:
       - ./opensandbox_config.toml:/etc/opensandbox/config.toml:ro
       - opensandbox_server_data:/root/.opensandbox
 
+  # Milvus Standalone：独立的元数据与对象存储，不复用共享 MinIO。
+  milvus:
+    image: milvusdb/milvus:v3.0.2
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      TZ: Asia/Shanghai
+      ETCD_ENDPOINTS: milvus-etcd:2379
+      MINIO_ADDRESS: milvus-minio:9000
+      MINIO_REGION: us-east-1
+      MINIO_ACCESS_KEY_ID: minioadmin
+      MINIO_SECRET_ACCESS_KEY: minioadmin
+    ports:
+      - "127.0.0.1:19530:19530" # SDK / gRPC
+      - "127.0.0.1:9091:9091" # 健康检查与 WebUI
+    volumes:
+      # 使用新命名卷，避免加载其他练习留下的 milvus_data。
+      - milvus_standalone_data:/var/lib/milvus
+    depends_on:
+      milvus-etcd:
+        condition: service_healthy
+      milvus-minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+  milvus-etcd:
+    image: quay.io/coreos/etcd:v3.5.25
+    restart: unless-stopped
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command:
+      - etcd
+      - --advertise-client-urls=http://milvus-etcd:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --data-dir=/etcd
+    volumes:
+      - milvus_standalone_etcd_data:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  milvus-minio:
+    image: milvusdb/minio:RELEASE.2024-12-18T13-15-44Z
+    restart: unless-stopped
+    command: ["minio", "server", "/minio_data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:19001
+    ports:
+      - "127.0.0.1:19000:9000" # Milvus 专用对象存储 API
+      - "127.0.0.1:19001:9001" # Milvus 专用 MinIO 控制台
+    volumes:
+      - milvus_standalone_minio_data:/minio_data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   # 共享对象存储，用于保存 Agent 生成的产物、用户上传的文件
   shared-minio:
     image: cgr.dev/chainguard/minio
@@ -277,3 +349,7 @@ volumes:
   nacos_logs:
   opensandbox_server_data:
   shared_minio_data:
+  milvus_standalone_data:
+  milvus_standalone_etcd_data:
+  milvus_standalone_minio_data:
+
