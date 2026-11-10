@@ -47,5 +47,12 @@ class RagImageParser(BaseModel):
     image_parser_prompt: str = Field(default="image_parser_prompt")
 
 
+class RagEmbeddingModel(BaseModel):
+    model_name: str = Field(default="text-embedding")
+    chunk_size: int = Field(default=20)
+    dimensions: int = Field(default=512)
+
+
 class RagConfig(BaseModel):
     image_parser: RagImageParser = Field(default_factory=RagImageParser)
+    embedding_model: RagEmbeddingModel = Field(default_factory=RagEmbeddingModel)
