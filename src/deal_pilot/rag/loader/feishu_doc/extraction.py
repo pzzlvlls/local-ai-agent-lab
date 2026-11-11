@@ -12,21 +12,42 @@ from deal_pilot.rag.structure.feishu_doc.block_node import BlockNode
 from deal_pilot.rag.structure.feishu_doc.block_type import BlockType
 
 
-_INTERNAL_FIELDS = frozenset({
-    "block_id", "block_type", "kind", "payload", "order",
-    "parent_document_id", "title_path", "references",
-})
+_INTERNAL_FIELDS = frozenset(
+    {
+        "block_id",
+        "block_type",
+        "kind",
+        "payload",
+        "order",
+        "parent_block_id",
+        "title_path",
+        "references",
+    }
+)
 _KINDS: dict[int, str] = {
-    BlockType.PAGE: "page", BlockType.IMAGE: "image",
-    BlockType.TABLE: "table", BlockType.CODE: "code",
+    BlockType.PAGE: "page",
+    BlockType.IMAGE: "image",
+    BlockType.TABLE: "table",
+    BlockType.CODE: "code",
     **{BlockType(value): "heading" for value in range(3, 12)},
 }
-_LABELS = {"page": "页面", "heading": "标题", "image": "图片", "table": "表格", "code": "代码"}
+_LABELS = {
+    "page": "页面",
+    "heading": "标题",
+    "image": "图片",
+    "table": "表格",
+    "code": "代码",
+}
 
 
 def _escape_ref(value: str) -> str:
     # 单行标签不会因外层 Markdown 引用或列表缩进而改变实际 placeholder。
-    return escape(value, quote=True).replace("\r", "&#13;").replace("\n", "&#10;").replace("\t", "&#9;")
+    return (
+        escape(value, quote=True)
+        .replace("\r", "&#13;")
+        .replace("\n", "&#10;")
+        .replace("\t", "&#9;")
+    )
 
 
 @dataclass(slots=True)
@@ -66,7 +87,9 @@ def extract_documents(
             content = render_node(node, children, frame.html)
             if frame.document is not None:
                 prefix = title_prefix(frame.title_path)
-                frame.document.page_content = "\n\n".join(part for part in (prefix, content) if part)
+                frame.document.page_content = "\n\n".join(
+                    part for part in (prefix, content) if part
+                )
                 fragments[node.block_id] = frame.placeholder
             else:
                 fragments[node.block_id] = content
@@ -80,28 +103,40 @@ def extract_documents(
         if kind is not None:
             if kind in {"page", "heading"} and node.content.strip():
                 frame.title_path = (*frame.title_path, node.content)
-            document = Document(id=node.block_id, page_content="", metadata={
-                **deepcopy(extra),
-                "block_id": node.block_id,
-                "block_type": int(node.block_type),
-                "kind": kind,
-                "payload": deepcopy(node.payload),
-                "order": len(documents),
-                "parent_document_id": owner.id if owner is not None else None,
-                "title_path": list(frame.title_path),
-                "references": [],
-            })
+            document = Document(
+                id=node.block_id,
+                page_content="",
+                metadata={
+                    **deepcopy(extra),
+                    "block_id": node.block_id,
+                    "block_type": int(node.block_type),
+                    "kind": kind,
+                    "payload": deepcopy(node.payload),
+                    "order": len(documents),
+                    "parent_block_id": owner.id if owner is not None else None,
+                    "title_path": list(frame.title_path),
+                    "references": [],
+                },
+            )
             documents.append(document)
             if owner is not None:
-                label = node.content if kind == "heading" and node.content.strip() else _LABELS[kind]
+                label = (
+                    node.content
+                    if kind == "heading" and node.content.strip()
+                    else _LABELS[kind]
+                )
                 placeholder = (
                     f'<document-ref id="{_escape_ref(node.block_id)}" '
                     f'kind="{_escape_ref(kind)}">{_escape_ref(label)}</document-ref>'
                 )
                 frame.placeholder = placeholder
-                owner.metadata["references"].append({
-                    "id": node.block_id, "kind": kind, "placeholder": placeholder,
-                })
+                owner.metadata["references"].append(
+                    {
+                        "id": node.block_id,
+                        "kind": kind,
+                        "placeholder": placeholder,
+                    }
+                )
             frame.document = document
             owner = document
             # 每份文档独立渲染；表格单元格中的子代码等仍用自己的 Markdown。

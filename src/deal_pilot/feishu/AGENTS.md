@@ -12,7 +12,7 @@
 - 直接使用 `config/feishu_settings.py:feishu_settings` 中的 app_id/app_secret；导入不请求网络，缺少配置在调用时抛出 FeishuConfigurationError。
 - 知识库的 `node_token` 与实际内容的 `obj_token` 不可混用；先判断 `obj_type` 再交给内容 API。
 - 本目录不负责结构化解析、切分、索引、检索或 Agent 工具注册。
-- 所有读取方法为 async，调用方使用 await；请求、缓存与错误细节见 `api/AGENTS.md`。
+- 读取方法使用 await；list_all_space_nodes 返回异步迭代器，使用 async for 按需消费，空间及目录分页均不预取。请求、缓存与错误细节见 `api/AGENTS.md`。
 - 当前 SDK 的异步接口仍包含同步鉴权，因此完整同步 SDK 调用放入 asyncio.to_thread，不直接在事件循环中调用同步 SDK。
 
 ## 验证边界

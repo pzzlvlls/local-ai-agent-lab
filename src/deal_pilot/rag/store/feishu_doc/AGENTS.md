@@ -4,7 +4,7 @@
 
 - `schema.py:create_schema(dim: int) -> CollectionSchema` 同步构造 Schema；`index_params.py` 的 `create_dense_index_params(config: RagStoreConfig) -> IndexParams`、`create_sparse_index_params() -> IndexParams` 分别构造稠密、稀疏索引参数。这些工厂不连接 Milvus、不创建集合或索引、不写入数据。
 - Schema 使用手动主键 `id: VARCHAR(64)`，对应飞书切片 `Document.id`；导出 Markdown 中的 `document_id` 是该 ID 的展示名称，不另设字段。`text` 上限为 2048 字节；切片预算按字符计量，图片/代码还可能整体保留，写入前须另核对 UTF-8 字节长度。
-- 来源字段为 `space_id`、`node_id`、`node_title`、`obj_id`、`revision_id`，以及 `block_id`、`block_type`、`kind`、`payload`、`order`、`parent_document_id`、`title_path`、`references`。切片位置保存 `chunk_index`、`chunk_count` 和表格专用 `table_row_index`。`payload`、`title_path`、`references` 用 JSON 保留原结构；`parent_document_id`、`table_row_index` 可空。关系 ID 仍指向来源 `block_id`，不能改成切片主键含义。
+- 来源字段为 `space_id`、`node_token`、`node_title`、`obj_token`、`revision_id`、`url`、`parent_node_token`，以及 `block_id`、`block_type`、`kind`、`payload`、`order`、`parent_block_id`、`title_path`、`references`。切片位置保存 `chunk_index`、`chunk_count` 和表格专用 `table_row_index`。`payload`、`title_path`、`references` 用 JSON 保留原结构；`parent_block_id`、`table_row_index` 可空。关系 ID 仍指向来源 `block_id`，不能改成切片主键含义。
 - 开启动态字段；`dense` 为 `FLOAT_VECTOR`，维度由 `dim` 传入。`text` 开启中文分析器，`text_to_bm25` Function 从正文生成 `sparse` 稀疏向量。
 - `DENSE_INDEX_NAME="dense_index"` 用于 `dense`，类型与度量来自 `RagStoreConfig`，当前没有传入构建参数。`SPARSE_INDEX_NAME="sparse_index"` 用于 `sparse`，固定 `SPARSE_INVERTED_INDEX/BM25`，遍历算法使用服务端默认值；当前没有标量索引。搜索时若显式指定度量，须与相应索引一致。
 

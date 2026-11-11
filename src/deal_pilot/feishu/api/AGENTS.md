@@ -24,8 +24,10 @@
 
 - list_spaces 返回所有可访问空间；list_nodes 返回全部直接子节点，不递归；分页大小均为 50。
   parent_node_token=None 表示空间根目录，不接受空 token。
-- list_all_space_nodes 按空间和目录广度遍历，返回扁平列表；按 `(space_id, node_token)` 去重，
-  指向相同 obj_token 的不同节点仍保留；不读取正文，不保证跨请求的数据快照一致。
+- list_all_space_nodes 返回 AsyncIterator[WikiNode]，使用 async for 按空间和目录广度优先遍历；
+  开始消费才请求网络，空间及目录分页按需读取，不预取。list_spaces/list_nodes 仍返回全量列表，
+  与遍历共用内部迭代器。请求随消费推进，没有固定速率限制，快速消费仍可能连续发起请求。
+  按 `(space_id, node_token)` 去重，指向相同 obj_token 的不同节点仍保留；不读取正文，不保证跨请求的数据快照一致。
 - WikiNode.obj_type 仍为 Literal["docx"]；其他类型抛出 UnsupportedWikiNodeTypeError，
   不转换、不静默过滤；混合类型空间的全量遍历会失败。
 - 节点 URL 按 `https://www.feishu.cn/wiki/{node_token}` 生成，不使用 obj_token 或服务返回 URL；
@@ -36,7 +38,7 @@
   避免官方模型丢失未知字段。根块空 parent_id 规范化为 None，缺少 children 时使用空列表。
 - ID/token 只接受单个资源标识，不解析链接或路径；传给请求 Builder 时保留原值，路径编码由 SDK 处理。
 - `await ImageAPI().download_image(token)` 接收图片块的 `image.token`，请求 Drive `medias/{file_token}/download`，
-  不使用 IM 消息图片接口。MIME 取响应 Content-Type，去参数并转小写；缺失或非 image/* 时抛 FeishuResponseError。
+  不使用 IM 消息图片接口。MIME 取响应 Content-Type，去参数并转小写；缺失或非 image/\* 时抛 FeishuResponseError。
   返回原始 bytes，不生成 URL、Base64 或落盘。JSON 错误响应仍校验业务 code，包括 HTTP 200；非 JSON HTTP 错误抛 FeishuHTTPError。
 
 ## SDK 与并发边界
@@ -60,7 +62,8 @@
 - SDK JSON/模型反序列化失败，以及缺失状态、code、data、分页游标等协议问题，抛出 FeishuResponseError。
   SDK 在返回前解析非 JSON 错误页失败时也归入此错误，不当作不存在。
 - 网络异常保留 SDK 底层 requests 异常；应用层模型字段不符合契约时保留 Pydantic ValidationError。
-- 全量列表任何页、空间或节点失败即抛出，不返回部分结果；list_blocks 的文档不存在也抛出。
+- 全量列表任何页失败即抛出，不返回部分列表；list_blocks 的文档不存在也抛出。
+  list_all_space_nodes 后续页、空间或节点失败时在迭代中抛出，已产出的节点不撤回，不静默跳过失败。
 - 空页且 has_more=True 时继续翻页；缺失或重复游标报错，防止截断或死循环。
 
 ## 验证与官方参考

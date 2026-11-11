@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from deal_pilot.utils.shared import get_thread_id
 
 
-def trace_wrapper(agent_factory):
+def trace_wrapper(agent_factory, *, enviroment: str | None = None):
     @asynccontextmanager
     async def _trace(config: RunnableConfig, runtime: ServerRuntime):
         metadata = config.get("metadata", {})
@@ -29,7 +29,11 @@ def trace_wrapper(agent_factory):
             },
         )
 
-        env = metadata.get("trace_environment", "")
+        env = (
+            enviroment
+            if enviroment is not None
+            else metadata.get("trace_environment", "")
+        )
         if env:
             with propagate_attributes(environment=env):
                 yield agent
