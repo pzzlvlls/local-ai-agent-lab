@@ -1,3 +1,5 @@
+from typing import Literal, get_args
+
 from pydantic import BaseModel, Field
 from deal_pilot.config.openai_settings import openai_settings
 
@@ -49,10 +51,23 @@ class RagImageParser(BaseModel):
 
 class RagEmbeddingModel(BaseModel):
     model_name: str = Field(default="text-embedding")
-    chunk_size: int = Field(default=20)
-    dimensions: int = Field(default=512)
+    chunk_size: int = Field(default=10)
+    dimensions: int = Field(default=1024)
+
+
+class RagStoreConfig(BaseModel):
+    index_type: str = Field(description="索引类型", default="HNSW")
+    metric_type: str = Field(description="相似度计算算法", default="COSINE")
+
+
+type MilvusCollection = Literal["feishu_doc"]
 
 
 class RagConfig(BaseModel):
     image_parser: RagImageParser = Field(default_factory=RagImageParser)
     embedding_model: RagEmbeddingModel = Field(default_factory=RagEmbeddingModel)
+    store: dict[MilvusCollection, RagStoreConfig] = Field(
+        default_factory=lambda: {
+            name: RagStoreConfig() for name in get_args(MilvusCollection.__value__)
+        }
+    )

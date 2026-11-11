@@ -4,7 +4,7 @@
 
 - `base_settings.py:BaseSettingsWithEnv` 从 `.env` 和进程环境读取配置，忽略额外字段。
 - 各 `*_settings.py` 定义并实例化服务连接配置；`nacos` 子目录读取与组装远程行为资源，详细规则见其指令文件。
-- Settings 负责地址和凭据等运行配置；AgentSpec、Prompt、Skill、MCP 及 `sandbox_config` 由 Nacos 提供，不混淆两层职责。
+- Settings 负责地址和凭据等运行配置；AgentSpec、Prompt、Skill、MCP、`sandbox_config` 及 `rag_config` 由 Nacos 提供，不混淆两层职责。
 
 ## 配置契约
 
@@ -18,6 +18,7 @@
 | BenchMarkSettings | `BENCHMARK_`    |
 | TavilySettings    | `TAVILY_`       |
 | FeishuSettings    | `FEISHU_`       |
+| MilvusSettings    | `MILVUS_`       |
 
 - Settings 实例在模块导入时创建；修改环境后不会自动重建已有实例。验证配置时先准备环境再导入。
 - `.env` 路径相对于运行目录，命令应从项目根目录执行。
@@ -25,6 +26,7 @@
 - MinIO 宿主地址用于客户端和交付 URL；`endpoint_in_sandbox` 用于沙箱内直传，两者不要求相同。
 - 许多连接参数默认空字符串；默认值不表示已配置或已连通。需要参数的调用方应给出明确错误。
 - 飞书读取使用 `feishu_settings.app_id/app_secret`；为空时调用抛出 `FeishuConfigurationError`，导入 API 不检查连接、不发起网络请求。
+- `milvus_settings.uri` 默认 `http://127.0.0.1:19530`，`db_name` 默认 `deal_pilot`，分别对应 `MILVUS_URI`、`MILVUS_DB_NAME`。存储初始化负责创建缺失数据库；Settings 本身不连接或创建数据库。稠密索引配置及新集合的向量维度由 Nacos `rag_config` 提供。
 
 ## 修改与验证
 

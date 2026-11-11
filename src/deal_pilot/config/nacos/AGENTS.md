@@ -1,31 +1,30 @@
-# 环境与配置模型
+# Nacos 资源获取与同步
 
-## 职责与分工
+## 职责与入口
 
-- `base_settings.py:BaseSettingsWithEnv` 从 `.env` 和进程环境读取配置，忽略额外字段。
-- 各 `*_settings.py` 定义并实例化服务连接配置；`nacos` 子目录读取与组装远程行为资源，详细规则见其指令文件。
-- Settings 负责地址和凭据等运行配置；AgentSpec、Prompt、Skill、MCP 及 `sandbox_config` 由 Nacos 提供，不混淆两层职责。
+- `nacos_access_token.py` 获取登录令牌；`nacos_config.py` 读取通用 YAML 配置。
+- `nacos_agent_spec.py` 读取 AgentSpec 并组装 Prompt、MCP 和 Skill；`nacos_schemas.py` 定义输出模型。
+- `nacos_prompt.py` 读取并按给定顺序拼接 Prompt；`nacos_mcp.py` 解析 MCP 端点和禁用工具；`nacos_skill.py` 将 Skill 压缩包同步到共享卷。
 
-## 配置契约
+## 关键契约
 
-| Settings | 环境变量前缀 |
-| --- | --- |
-| OpenAISettings | `OPENAI_` |
-| NacosSettings | `NACOS_` |
-| SandboxSettings | `OPEN_SANDBOX_` |
-| MinioSettings | `MINIO_` |
-| LangfuseSettings | `LANGFUSE_` |
-| BenchMarkSettings | `BENCHMARK_` |
-| TavilySettings | `TAVILY_` |
+- 所有资源使用 `nacos_settings.namespace_id`。AgentSpec、Prompt、Skill 查询当前使用 `production` label；通用配置使用 `deal_pilot` group，当前 `ConfigName` 支持 `sandbox_config` 和 `rag_config`。
+- AgentSpec 的 content 是 JSON；通用配置 content 是 YAML，使用 `yaml.safe_load` 后通过 Pydantic 校验，不将两种格式互换。
+- `RagConfig` 包含 `image_parser`、`embedding_model` 和 `store`；`MilvusCollection` 当前仅允许 `feishu_doc`。省略 `store` 时默认生成该集合的 `RagStoreConfig`，其中 `index_type="HNSW"`、`metric_type="COSINE"`，没有索引构建参数字段。显式传入的 `store` 不会自动补齐缺失集合，初始化直接读取 `store["feishu_doc"]`。新集合 Schema 的向量维度取 `embedding_model.dimensions`（默认 1024），已有集合不随配置自动迁移。
+- 系统指令来自资源 `instruction_{agent_name}/AGENTS__MD`，再拼接 `link_prompts`。这份远程指令服务于运行时 Agent，与仓库开发用 `AGENTS.md` 是不同内容，不自动上传仓库指令。
+- MCP 当前取 `backendEndpoints` 的第一个端点；工具元数据中的 `enabled=false` 转为禁用列表。修改选端逻辑时同步工厂的工具名前缀规则。
+- 当前业务码非零的降级分别为默认 AgentSpec、空 Prompt、缺失 MCP 或默认通用配置；不要把这种结果描述为成功读取远程配置。网络或解析错误也不等同于资源不存在。
 
-- Settings 实例在模块导入时创建；修改环境后不会自动重建已有实例。验证配置时先准备环境再导入。
-- `.env` 路径相对于运行目录，命令应从项目根目录执行。
-- `NacosSettings.server_address` 移除末尾斜线；MinIO endpoint 不含协议，TLS 由 `secure` 控制，API 地址与控制台地址不能混用。
-- MinIO 宿主地址用于客户端和交付 URL；`endpoint_in_sandbox` 用于沙箱内直传，两者不要求相同。
-- 许多连接参数默认空字符串；默认值不表示已配置或已连通。需要参数的调用方应给出明确错误。
+## 缓存与共享资源
+
+- 令牌通过进程内异步锁避免重复登录，使用单调时间并提前 30 秒到期；这不是跨进程锁。
+- 配置、AgentSpec、Prompt 和 MCP 使用 `func_cache(ttl=nacos_settings.ttl, lazy=True)`：过期有旧值时先返回旧值再后台刷新，刷新失败保留旧值。
+- `get_agent_spec` 会调用 `save_skills`，并非纯读操作。Skill 同步会先清理 `/shared/skills/{agent_name}`，再下载、解压到该目录；压缩包放在 `/shared/skill_zips/{agent_name}`。
+- 只有共享维护沙箱可写共享卷。改 Skill 同步时检查并发刷新、路径引用和命令转义，不将清理范围扩大到其他 Agent 目录。
+- 当前代码尚未提供 Skill 同步的原子替换或完整压缩包安全校验保证；不能把这些能力写成既有实现。
 
 ## 修改与验证
 
-- 新配置沿用服务前缀，补充类型和必要的校验，同步 `.env.example`、消费者与相关说明；不要写入实际凭据。
-- 改名、改默认值或改单位时核对所有调用方。Nacos TTL 的单位为秒；Langfuse trace retention 的单位为天。
-- 用临时环境验证解析、默认值和非法值，不修改真实 `.env`。真实连通性需要单独验证，Settings 构造成功不代表服务可用。
+- 新资源类型同步 schema、查询参数和调用方；API 字段与版本以实际响应或官方文档为依据，不凭名称推断。
+- 本地替代响应可验证组装、降级和缓存语义；真实验证需 Nacos，Skill 场景还需 OpenSandbox，且会写共享资源。
+- `__main__` 示例可能访问远程服务或重写 Skill，不作为无副作用检查命令。当前没有专门的 Nacos 集成测试。

@@ -15,8 +15,8 @@
 
 - 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，以 Deep Agents 组装 Agent，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
 - Langfuse 用于追踪、离线评测和 Webhook；OpenSandbox 提供用户执行环境；MinIO 用于产物存储与交付；模型通过 OpenAI 兼容接口及自定义模型适配层调用。
-- 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；尚未实现向量索引或检索，不要仅凭目录名推断这些能力已经实现。
-- 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。课件通过 PyMilvus 连接，不依赖 Milvus Lite；这不表示 RAG 源码已经接入向量数据库。
+- 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；`rag/store/feishu_doc` 已实现 Milvus Schema、索引参数及显式调用的数据库/集合初始化和稠密索引重建。尚未实现文档向量化写入或检索，存储初始化未接入 Agent 或服务启动流程。
+- 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。课件与 RAG 存储模块通过 PyMilvus 连接，不依赖 Milvus Lite。
 - `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用与图片下载；尚未接入 Agent 或 RAG 流程，本地 Mock 测试不代表真实租户验证。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
 - `graphs` 保存手工构建的普通 LangGraph 图，不存放通过 LangChain 或 Deep Agents 创建的 Agent 图；当前包含可调度的清理图。调度计划由外部服务管理，代码中没有自动注册定时计划的逻辑。
@@ -39,6 +39,8 @@
 | `src/deal_pilot/rag/structure/feishu_doc` | 异步构树、原始关系校验、标题归组、内容及元数据提取；完整树构建后按文档顺序串行调用图片处理占位函数；提供 Data URL、私有图片上传及上下文辅助函数，尚未接入模型识图、切分、索引或检索 |
 | `src/deal_pilot/rag/loader/feishu_doc`    | 标准树到 LangChain Documents 的本地结构提取；父子占位引用、Markdown 正文、HTML 表格与合并校验，不按长度切片                                                                         |
 | `src/deal_pilot/rag/splitter/feishu_doc`  | 结构 Documents 的本地进一步切片；图片/代码整体保留，表格首行表头加单行，页面/章节按段落、句子和长度切分，保护占位符并保留目标 overlap                                               |
+| `src/deal_pilot/rag/store/feishu_doc`     | Milvus Schema 与索引参数、数据库/集合初始化及稠密索引重建；尚无文档写入或检索接口                                                                                                   |
+| `resource/store`                          | 存储代码副本，与正式源码存在维度和导入差异；使用前核对本目录指令，不能视为独立可用实现                                                                                              |
 | `tests/units`                             | 函数缓存、飞书 Mock、文档构树、Documents 结构提取及进一步切片单元测试                                                                                                               |
 | `tests/intergrations`                     | MinIO 与 Deploy 集成测试，保留现有目录拼写                                                                                                                                          |
 | `tests/benchmarks`                        | 依赖真实 Agent 和 Langfuse 的质量回归                                                                                                                                               |
@@ -78,6 +80,11 @@ Milvus SDK 端口为 `127.0.0.1:19530`，健康检查及 WebUI 为 `127.0.0.1:90
 - 按改动选择验证：纯文档检查路径、命令与事实；缓存改动运行单元测试；存储和部署改动运行对应集成测试；Agent 行为改动按场景评测。不要对所有改动默认执行整个测试目录。
 - 缺少外部服务时报告未验证项。区分源码检查、本地测试、Mock 和真实服务验证；测试跳过不等于验证通过。
 - 模块接口、入口、环境变量、资源路径或行为契约变化时，同步检查相关调用方、测试和指令文件。
+
+## 课件配图要求
+
+- 课件图片默认不加标题，以图形、嵌套、连线、箭头、位置和颜色直观表达概念关系或流程，让图片本身承担解释作用。
+- 不在图片中堆叠文字说明；必须使用文字时，仅保留少量必要的概念名、标签或简短示例，不用大段文字代替图形表达。
 
 ## 保持的设计约束
 
