@@ -17,7 +17,16 @@
 - `await drop_index(collection_name, *, client) -> None` 先 `release_collection`，再按 `DENSE_INDEX_NAME` 删除稠密索引；不删除集合、实体或稀疏索引，不负责重建或重新加载。释放期间集合不可查询/检索；后续操作失败时不会自动恢复加载状态。
 - 辅助函数不创建或关闭客户端；`init_store` 统一在 `finally` 中关闭。异常及取消不被捕获转换；已完成的数据库操作不回滚。初始化必须显式调用，尚未接入 Agent 或服务启动流程。
 
+## LangChain 存储对象
+
+- `get_store.py:await get_store()` 返回 `langchain_milvus.Milvus`。模块级 `_lock` 串行保护首次创建，成功后 `_store` 缓存同一对象；后续调用不重新初始化或刷新 Nacos 配置。初始化或构造失败时异常原样传播，缓存仍为空，已完成的数据库操作不回滚。
+- 首次调用先 `await init_store()`，再读取 Nacos `rag_config`，使用 `create_embedding_model(config.embedding_model)` 创建 `OpenAIEmbeddings`。连接和数据库来自 `milvus_settings`，集合固定为 `feishu_doc`；字段映射为主键 `id`、正文 `text`、向量 `dense`/`sparse`，稀疏端使用 `BM25BuiltInFunction(text -> sparse)`。开启动态字段，`auto_id=False`、`drop_old=False`，不删除既有集合。
+- 调用方可使用返回对象的 `aadd_documents`、`asimilarity_search` 等异步接口；当前没有从飞书加载、切片到入库的编排，也没有额外的业务写入/检索封装。使用已安装的 `langchain-milvus==0.4.0` 时，`aadd_documents` 不自动取 `Document.id`，须显式传入 `ids=[...]`；metadata 需包含 Schema 中的必填来源字段及切片字段，动态字段不能代替这些字段。
+- 当前 `Milvus(...)` 构造包含同步联网调用，直接运行在 `get_store()` 所在的事件循环中，尚未做阻塞隔离；不能据函数为 async 就视为全程不阻塞。缓存对象持有同步及异步客户端，当前没有统一关闭或缓存重置入口；不要在使用期间关闭后继续复用缓存对象，也不要跨事件循环复用它。
+
 ## 验证边界
 
 - 当前没有对应的存储单元测试或集成测试文件；源码与本地 SDK 参数构造不能证明真实 Milvus 行为。
 - 需要真实验证时使用隔离临时数据库，分别核对首次创建、配置未变、稠密索引重建及数据/稀疏索引保留；Nacos 若使用 Mock，应单独注明，不能称为完整联调。
+- 2026-10-22 已用真实 Nacos、Embedding 服务和 Milvus 手工验证 `get_store()`：隔离数据库 `deal_pilot_get_store_test_20261022_174056_f016a2` 中创建集合，3 个并发调用返回同一缓存对象；通过返回对象的 `aadd_documents(..., ids=...)` 写入 3 条数据，读回正文与全部测试 metadata 一致，稠密向量均为 1024 维，BM25 与混合检索均将退款样例排在首位。另一个进程也成功获取既有集合。测试数据保留，主键为 `get_store_test_20261022_174056_f016a2_1` 至 `_3`；此次未验证索引配置变更或故障恢复。
+- BM25 Function 生成的 `sparse` 字段不允许通过 query 读回原始向量；验证时读回正文/元数据/稠密向量，并通过实际 BM25 搜索核对稀疏检索，不能要求 query 返回该字段。
