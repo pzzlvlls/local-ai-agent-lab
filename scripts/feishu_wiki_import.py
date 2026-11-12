@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 resource/企业知识库 下的 Markdown 导入飞书知识库。
+"""把 assets/企业知识库 下的 Markdown 导入飞书知识库。
 
 用法（在项目根目录执行）：
     uv run python scripts/feishu_wiki_import.py --dry-run   # 只打印计划，不写飞书
@@ -54,7 +54,7 @@ from lark_oapi.core.model import BaseRequest, BaseResponse
 from deal_pilot.config.feishu_settings import feishu_settings
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_DIR = ROOT / "resource" / "企业知识库"
+SOURCE_DIR = ROOT / "assets" / "企业知识库"
 TEMP_FOLDER_NAME = "wiki-import-temp"
 IMPORT_TIMEOUT_SECONDS = 180
 TASK_TIMEOUT_SECONDS = 120
