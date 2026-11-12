@@ -12,6 +12,13 @@
 - `ask_user_question` 使用 LangGraph interrupt 暂停，返回恢复时的答案；问题为 2–5 个选项，标题唯一，最多一个推荐项。不要在可重放的 interrupt 前加入不可重复的外部副作用。
 - `get_current_time` 当前返回宿主机本地时区的 ISO 时间，虽然工具描述称北京时间，实现未固定 `Asia/Shanghai`；修改时间语义时同时更新描述与测试。
 
+## MinIO 临时链接契约
+
+- `get_bucket_file_url(bucket_name: str, bucket_filename: str)` 已加入内置注册表；每次调用使用 `config/minio_settings.py` 的连接配置创建 `MinIO`，将 `bucket_filename` 作为 `presigned_get_file_url` 的 `filename`，异步返回 URL 字符串。
+- 工具未显式传入过期时间，沿用客户端默认 1 小时；实际可访问性及有效期仍受对象存在、服务端权限和签名凭据约束。生成链接不预检查对象存在，不上传文件、不建桶或修改桶权限；参数、配置和签名错误原样传播。
+- 当前桶名与对象键均由模型填写，工具未读取认证用户，也未校验允许的桶、用户前缀或参数是否来自检索结果。不得将其描述为具备用户级对象授权；需要隔离用户对象时，应在授权开发中补充服务端校验，不能仅依赖提示词。
+- 第 35 节课件约定从本次 `kind=image` 的检索结果中读取 `payload.bucket_name`、`payload.bucket_filename`，调用工具后使用实际 URL 输出 Markdown 图片；这是提示词示例，不会自动配置 Nacos AgentSpec 或系统提示词。
+
 ## Deploy 数据与错误契约
 
 - 文件留在用户沙箱内，通过 `/sandbox_utils` 的 Python 和 MinIO 客户端直传，不经宿主机下载再上传。沙箱镜像来自项目 `docker/sandbox/Dockerfile`。
@@ -25,5 +32,7 @@
 - 工具只上传产物，不改写网页资源路径；静态页面构建应支持部署子目录。
 
 ## 修改与验证
+
+`get_bucket_file_url` 当前没有专门测试；`tests/intergrations/test_minio.py` 覆盖底层预签名 URL，但不证明工具注册、Agent 工具选择或图片展示链路可用。本轮仅核对源码与指令，未调用真实 MinIO 或 Agent 服务。
 
 Deploy 修改运行 `tests/intergrations/test_deploy.py` 的相关场景，启用条件见根目录指令；参数 schema 可单独本地验证。测试使用独立随机桶和无持久卷沙箱，不能替换为生产资源。改变部署语义时同步 schema、docstring、测试契约与本文件；测试不覆盖完整 LLM 工具选择或 Agent Server 鉴权。

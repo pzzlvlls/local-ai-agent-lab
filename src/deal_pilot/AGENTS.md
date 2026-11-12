@@ -7,6 +7,7 @@
 ## 主要调用关系
 
 - `langgraph.json` → `agents/main.py:factory_with_trace` → `utils/trace_wrapper.py` → `AgentFactory.factory()`。
+- 独立入口 `agents/retrieve_agent.py:factory_with_trace` 复用 `AgentFactory.factory()`，挂载 `middlewares/retrieve_context.py`；执行前调用 `rag/retriever/feishu_doc/feishu_doc_retriever.py:search`，将检索结果追加到 messages 后交给模型。当前未加入主 Agent 的子 Agent 注册表。
 - 工厂读取 `config/nacos` 的 AgentSpec，组装模型、内置工具、MCP、子 Agent 和 Skill，交给 Deep Agents 创建运行图。
 - 工具和后端从 `utils/shared.py` 获取认证用户与会话；`backends/sandbox_backend.py` 通过 `utils/sandbox.py` 连接或创建执行环境。
 - `app` 接收 Langfuse Webhook；实验入口调用 `benchmarks`，评分由 `benchmarks/evaluators` 提供。
@@ -24,6 +25,7 @@
 - `rag/loader/feishu_doc` 将已有标准树提取为 LangChain Documents；页面、标题、图片、表格和代码分别成文档，父文档保留正文和子文档占位引用。仅本地转换，不读取飞书、不重新构树或按长度切片。
 - `rag/splitter/feishu_doc` 对 loader 结果进一步切片：图片/代码不拆，表格首行表头加单行，页面/章节复用 LangChain 递归切分并保护占位符。切片新增序号与总数，block_id、parent_block_id 等保留来源结构含义；不执行向量化或入库。
 - `rag/store/feishu_doc` 使用 PyMilvus 异步客户端显式初始化数据库、集合及稠密/稀疏索引；已有集合先同步可原地更新的 Schema（可空标量新增、VARCHAR 扩容），其他差异预检报错并保留数据；再比较稠密索引类型和度量，变化时释放集合、删除并重建稠密索引后重新加载。另有显式 `backfill_space_titles` 入口，从飞书读取知识空间名称并局部更新历史缺失标题。`get_store()` 首次调用先初始化，再按 Nacos Embedding 配置在线程中构造并缓存 LangChain Milvus 对象。连接配置来自 `config/milvus_settings.py`，索引配置和新集合向量维度来自 Nacos `rag_config`；索引图使用该对象比较版本、写入切片和删除旧版本实体，不在服务启动时自动入库。
+- `rag/retriever/feishu_doc` 复用存储对象进行混合检索与重排，返回 `SearchResult(doc, score)`；中间件负责消息注入，Agent 工厂负责模型与远程提示词组装，检索器本身不生成回答。
 - `utils` 只保留被其他模块复用的能力，不作为新增业务逻辑的默认归宿。
 
 ## 修改与验证

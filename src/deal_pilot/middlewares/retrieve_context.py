@@ -32,6 +32,7 @@ async def retrieve_context(state: DeepAgentState, runtime: Runtime):
             for result in results
         ],
         ensure_ascii=False,
+        indent=2,
     )
     return {
         "messages": [

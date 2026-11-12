@@ -15,7 +15,8 @@
 
 - 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，以 Deep Agents 组装 Agent，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
 - Langfuse 用于追踪、离线评测和 Webhook；OpenSandbox 提供用户执行环境；MinIO 用于产物存储与交付；模型通过 OpenAI 兼容接口及自定义模型适配层调用。
-- 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；`rag/store/feishu_doc` 提供 Milvus 初始化与缓存的 LangChain Milvus 对象，支持文档向量化写入和稠密/BM25 混合检索。`graphs/feishu_doc_index` 已编排目录分批、版本比较、构树、加载、切片、写入和旧版本清理，并注册为独立服务图；运行时显式调用，不在服务启动时自动入库，尚未接入 Agent。图片识图仍为占位，流程限制与验证边界见图模块指令。
+- 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；`rag/store/feishu_doc` 提供 Milvus 初始化与缓存的 LangChain Milvus 对象，支持文档向量化写入和稠密/BM25 混合检索。`graphs/feishu_doc_index` 已编排目录分批、版本比较、构树、加载、切片、写入和旧版本清理，并注册为独立服务图；运行时显式调用，不在服务启动时自动入库，索引流程尚未接入 Agent。图片识图仍为占位，流程限制与验证边界见图模块指令。
+- `retrieve_agent` 已注册为独立 Agent 服务入口：`retrieve_context` 在 Agent 执行前，以最后一条普通用户消息调用飞书检索器，将结果作为命名消息追加给模型。系统提示词仍由 Nacos 提供，第 34、35 节课件分别提供检索生成和图片展示提示词示例，不会自动加载。内置注册表已加入 `get_bucket_file_url`，可生成默认 1 小时的 MinIO GET 预签名链接；Agent 使用该工具仍需在远程 AgentSpec 中配置，不能据本地注册推断远程已启用。当前检索 Agent 未注册为主 Agent 的子 Agent，仓库没有检索生成或图片展示链路的专门测试，本轮未进行真实服务联调。
 - 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。存储初始化使用 PyMilvus，`get_store()` 使用 `langchain-milvus` 连接该服务；其锁定版本 0.4.0 在非 Windows 平台传递引入 `milvus-lite`，当前运行仍使用 Standalone，不使用本地 Lite 数据库。
 - `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用与图片下载；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具，本地 Mock 测试不代表真实租户验证。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
@@ -25,13 +26,13 @@
 
 | 路径                                      | 职责                                                                                                                                                                        |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装                                                                                                                                    |
+| `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装及独立检索 Agent                                                                                                                    |
 | `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook                                                                                                                                        |
 | `src/deal_pilot/config`                   | 环境配置；`nacos` 子目录负责远程资源读取与同步                                                                                                                              |
 | `src/deal_pilot/security`                 | LangGraph 身份认证与资源授权                                                                                                                                                |
 | `src/deal_pilot/backends`                 | Deep Agents 后端到 OpenSandbox 的适配                                                                                                                                       |
 | `src/deal_pilot/tools`                    | 模型可调用的工具及注册表                                                                                                                                                    |
-| `src/deal_pilot/middlewares`              | Agent 执行阶段的状态处理                                                                                                                                                    |
+| `src/deal_pilot/middlewares`              | 主 Agent 轮次摘要、检索 Agent 执行前的参考材料注入                                                                                                                          |
 | `src/deal_pilot/utils`                    | 模型、追踪、缓存、存储、沙箱等公共能力                                                                                                                                      |
 | `src/deal_pilot/benchmarks`               | 数据集与实验；`evaluators` 子目录负责评分                                                                                                                                   |
 | `src/deal_pilot/graphs`                   | 手工构建的普通 LangGraph 图及其入口                                                                                                                                         |
@@ -41,13 +42,14 @@
 | `src/deal_pilot/rag/loader/feishu_doc`    | 标准树到 LangChain Documents 的本地结构提取；父子占位引用、Markdown 正文、HTML 表格与合并校验，不按长度切片                                                                 |
 | `src/deal_pilot/rag/splitter/feishu_doc`  | 结构 Documents 的本地进一步切片；图片/代码整体保留，表格首行表头加单行，页面/章节按段落、句子和长度切分，保护占位符并保留目标 overlap                                       |
 | `src/deal_pilot/rag/store/feishu_doc`     | Milvus Schema 安全原地同步、数据库/集合初始化、稠密索引重建及历史知识库标题回填；缓存返回支持文档写入和稠密/BM25 混合检索的 LangChain Milvus 对象                           |
+| `src/deal_pilot/rag/retriever/feishu_doc` | 基于缓存存储对象进行异步混合检索、重排及分数过滤，返回 Document 与 score；由检索中间件调用                                                                                  |
 | `resource/feishu_doc_index`               | 索引流水线教学骨架；主图节点为省略号、子图业务节点为占位，不是独立运行实现                                                                                                  |
 | `tests/units`                             | 函数缓存、飞书 Mock、文档构树、Documents 结构提取、切片、Milvus Schema 预检与标题回填单元测试                                                                               |
 | `tests/intergrations`                     | MinIO、Deploy 与 Milvus Schema 隔离集成测试，各自通过环境变量启用；保留现有目录拼写                                                                                         |
 | `tests/benchmarks`                        | 依赖真实 Agent 和 Langfuse 的质量回归                                                                                                                                       |
 | `docker/sandbox/Dockerfile`               | 沙箱镜像，包含部署所需的上传工具                                                                                                                                            |
 
-运行入口由 `langgraph.json` 定义：`main_agent` 指向追踪包装后的 Agent 工厂，`delete_old_trace` 指向清理图，`feishu_doc_index` 指向 `deal_pilot.graphs.feishu_doc_index.graph:factory_with_trace`；鉴权入口是 `security.auth:auth`，自定义 HTTP 应用是 `app.main:app`。调整导出名称或模块路径时同步检查该文件。
+运行入口由 `langgraph.json` 定义：`main_agent` 指向追踪包装后的主 Agent 工厂，`retrieve_agent` 指向 `deal_pilot.agents.retrieve_agent:factory_with_trace`，`delete_old_trace` 指向清理图，`feishu_doc_index` 指向 `deal_pilot.graphs.feishu_doc_index.graph:factory_with_trace`；鉴权入口是 `security.auth:auth`，自定义 HTTP 应用是 `app.main:app`。调整导出名称或模块路径时同步检查该文件。
 
 ## 环境与常用命令
 
