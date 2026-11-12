@@ -17,17 +17,21 @@
 - 子 Agent 只从 `_AGENT_FACTORIES` 映射加载，当前只注册 `web_agent`，模块必须导出异步 `factory`。未注册的远程名称当前会被忽略。
 - 子 Agent 使用 `CompiledSubAgent` 包装已创建的 runnable，避免把原始 AgentSpec 当成可运行图。
 - 主 Agent 使用 `MainAgentState` 与 `turn_summary` 中间件；新增状态字段时同步检查写入方和消费者。
-- 检索 Agent 仅覆盖名称与 `get_middlewares()`，挂载 `retrieve_context`，沿用基类 `DeepAgentState`、后端及配置组装流程；不挂载主 Agent 的 `turn_summary`。检索消息契约见 `../middlewares/AGENTS.md`。
+- 基类通过 `get_response_format() -> ResponseFormat[Any] | None` 提供结构化输出扩展点，默认返回 `None`，在 `create_agent()` 中作为 `response_format` 传给 `create_deep_agent`；主 Agent 和 Web 子 Agent 当前沿用默认值。
+- 检索 Agent 覆盖名称、`get_middlewares()` 与 `get_response_format()`，挂载 `retrieve_context` 并返回 `ToolStrategy(RetrieveResponse)`；沿用基类 `DeepAgentState`、后端及配置组装流程，不挂载主 Agent 的 `turn_summary`。检索消息契约见 `../middlewares/AGENTS.md`。
+- `retrieve_agent.py` 定义 Pydantic 输出模型：`RetrieveResponse` 的必填字段为 `status`（`answered`、`partial`、`unanswerable`）、`answer: str`（Markdown 正文）、`sources: list[Source]` 与 `gaps: list[str]`；每个 `Source` 必填 `title: str` 和 `url: str | None`，链接缺失时显式传 `None`。成功解析的对象由框架写入状态 `structured_response`，调用方应从该字段读取结构化结果。
+- 来源实际采用、按文档去重、不编造链接，以及材料充足性判断等要求由字段描述和系统提示词引导；当前没有自定义校验器核验这些语义，不能把类型校验等同于回答有据可查。服务失败仍通过异常表达，不用 `unanswerable` 代替服务错误。
 - 检索 Agent 的系统提示词来自 Nacos 的 `instruction_retrieve_agent/AGENTS__MD` 及关联 Prompt。`课件/34. 基于检索结果的内容生成.md` 提供提示词与字段说明示例，不由工厂读取，也不能据仓库文件推断远程资源已配置。提示词需区分普通用户 query 与 `retrieval_results` 参考材料，并约束空结果、来源引用和材料中指令的处理。
 - `课件/35. 恢复图片展示.md` 在提示词示例中补充图片展示：读取本次图片检索结果的 `payload.bucket_name`、`payload.bucket_filename`，调用 `get_bucket_file_url` 后使用返回链接输出 Markdown 图片。工具已在本地内置注册表注册，仍需在 Nacos AgentSpec 的 `tools` 中显式选择并配置相应提示词；工厂不自动添加该工具，也不读取课件。工具参数和权限边界见 `../tools/AGENTS.md`，本地改动不代表远程配置或图片展示联调已完成。
+- `课件/36. 格式化输出.md` 提供与 `RetrieveResponse` 配套的系统提示词示例，要求通过结构化输出工具返回结果，将正文、引用和图片放入 `answer`；`sources` 仅收录实际支持回答的文档，`gaps` 记录缺失信息或未解决冲突。课程目录 `课程内容.json` 已加入“格式化输出”；课件仍需人工配置到 Nacos，不由工厂自动加载。
 - 工厂实例保留 `agent_config`，MCP 工具还有独立的 86400 秒缓存；涉及配置刷新或并发组装时检查共享状态与缓存影响，不假设 Nacos 更新立即生效。
 
 ## 修改指引
 
 - 新增子 Agent：实现工厂模块和导出 → 注册 `_AGENT_FACTORIES` → 对齐远程 AgentSpec。只有需要对外暴露为独立图时才修改 `langgraph.json`。
-- 优先通过 `get_backend`、`get_middlewares`、`get_state_schema` 等扩展点调整差异，公共组装流程留在基类。
+- 优先通过 `get_backend`、`get_middlewares`、`get_state_schema`、`get_response_format` 等扩展点调整差异，公共组装流程留在基类。
 - 保留 `factory_with_trace` 的服务入口契约；改导出时同步 `langgraph.json` 和追踪逻辑。
 
 ## 验证方式
 
-目前没有专门的工厂单元测试或检索 Agent 场景测试。局部验证可使用受控配置和替代客户端检查组装；真实检索生成还依赖 Nacos、Embedding、Milvus、模型及按配置使用的沙箱等服务。检索 Agent 应覆盖有结果、空结果、连续轮次与检索失败的场景；本轮仅核对源码与指令，未进行真实服务联调。行为变化按根目录命令选择适用的 Benchmark 数据集；不得将组装检查称为真实 Agent 运行通过。
+目前没有专门的工厂单元测试或检索 Agent 场景测试。局部验证可使用受控配置和替代客户端检查组装；真实检索生成还依赖 Nacos、Embedding、Milvus、模型及按配置使用的沙箱等服务。检索 Agent 应覆盖有结果、空结果、连续轮次与检索失败的场景，并检查 `response_format` 传递、`structured_response` 的读取及来源/缺口语义；本轮仅核对源码与指令，未进行真实服务联调。行为变化按根目录命令选择适用的 Benchmark 数据集；不得将组装检查称为真实 Agent 运行通过。

@@ -16,7 +16,7 @@
 - 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，以 Deep Agents 组装 Agent，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
 - Langfuse 用于追踪、离线评测和 Webhook；OpenSandbox 提供用户执行环境；MinIO 用于产物存储与交付；模型通过 OpenAI 兼容接口及自定义模型适配层调用。
 - 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；`rag/store/feishu_doc` 提供 Milvus 初始化与缓存的 LangChain Milvus 对象，支持文档向量化写入和稠密/BM25 混合检索。`graphs/feishu_doc_index` 已编排目录分批、版本比较、构树、加载、切片、写入和旧版本清理，并注册为独立服务图；运行时显式调用，不在服务启动时自动入库，索引流程尚未接入 Agent。图片识图仍为占位，流程限制与验证边界见图模块指令。
-- `retrieve_agent` 已注册为独立 Agent 服务入口：`retrieve_context` 在 Agent 执行前，以最后一条普通用户消息调用飞书检索器，将结果作为命名消息追加给模型。系统提示词仍由 Nacos 提供，第 34、35 节课件分别提供检索生成和图片展示提示词示例，不会自动加载。内置注册表已加入 `get_bucket_file_url`，可生成默认 1 小时的 MinIO GET 预签名链接；Agent 使用该工具仍需在远程 AgentSpec 中配置，不能据本地注册推断远程已启用。当前检索 Agent 未注册为主 Agent 的子 Agent，仓库没有检索生成或图片展示链路的专门测试，本轮未进行真实服务联调。
+- `retrieve_agent` 已注册为独立 Agent 服务入口：`retrieve_context` 在 Agent 执行前，读取 Nacos `rag_config.retriever`，以最后一条普通用户消息和该配置调用飞书检索器，将结果作为命名消息追加给模型。工厂使用 `ToolStrategy(RetrieveResponse)`，成功生成的结构化结果位于状态的 `structured_response`，包含 `status`、Markdown `answer`、`sources` 和 `gaps`。系统提示词仍由 Nacos 提供，第 34、35、36 节课件分别提供检索生成、图片展示和格式化输出提示词示例，不会自动加载。内置注册表已加入 `get_bucket_file_url`，可生成默认 1 小时的 MinIO GET 预签名链接；Agent 使用该工具仍需在远程 AgentSpec 中配置，不能据本地注册推断远程已启用。当前检索 Agent 未注册为主 Agent 的子 Agent，仓库没有检索生成、图片展示或结构化输出链路的专门测试，本轮未进行真实服务联调。
 - 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。存储初始化使用 PyMilvus，`get_store()` 使用 `langchain-milvus` 连接该服务；其锁定版本 0.4.0 在非 Windows 平台传递引入 `milvus-lite`，当前运行仍使用 Standalone，不使用本地 Lite 数据库。
 - `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用与图片下载；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具，本地 Mock 测试不代表真实租户验证。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。

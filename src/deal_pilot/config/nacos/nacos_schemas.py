@@ -76,7 +76,7 @@ class RerankerConfig(BaseModel):
 class RetrieverConfig(BaseModel):
     fetch_k: int = Field(default=10)
     k: int = Field(default=4)
-    param: dict | None = Field(default=None)
+    param: list[dict] | None = Field(default=None)
     reranker: RerankerConfig = Field(default_factory=RerankerConfig)
 
 

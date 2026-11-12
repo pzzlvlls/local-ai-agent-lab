@@ -7,7 +7,7 @@
 ## 主要调用关系
 
 - `langgraph.json` → `agents/main.py:factory_with_trace` → `utils/trace_wrapper.py` → `AgentFactory.factory()`。
-- 独立入口 `agents/retrieve_agent.py:factory_with_trace` 复用 `AgentFactory.factory()`，挂载 `middlewares/retrieve_context.py`；执行前调用 `rag/retriever/feishu_doc/feishu_doc_retriever.py:search`，将检索结果追加到 messages 后交给模型。当前未加入主 Agent 的子 Agent 注册表。
+- 独立入口 `agents/retrieve_agent.py:factory_with_trace` 复用 `AgentFactory.factory()`，挂载 `middlewares/retrieve_context.py`；执行前读取 Nacos `rag_config.retriever` 并显式传给 `rag/retriever/feishu_doc/feishu_doc_retriever.py:search`，将检索结果追加到 messages 后交给模型，通过 `ToolStrategy(RetrieveResponse)` 返回结构化回答。当前未加入主 Agent 的子 Agent 注册表。
 - 工厂读取 `config/nacos` 的 AgentSpec，组装模型、内置工具、MCP、子 Agent 和 Skill，交给 Deep Agents 创建运行图。
 - 工具和后端从 `utils/shared.py` 获取认证用户与会话；`backends/sandbox_backend.py` 通过 `utils/sandbox.py` 连接或创建执行环境。
 - `app` 接收 Langfuse Webhook；实验入口调用 `benchmarks`，评分由 `benchmarks/evaluators` 提供。
