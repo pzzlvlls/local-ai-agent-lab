@@ -6,7 +6,8 @@
   },
   "graphs": {
     "main_agent": "deal_pilot.agents.main:factory_with_trace",
-    "delete_old_trace": "deal_pilot.crons.delete_old_trace:graph"
+    "delete_old_trace": "deal_pilot.graphs.delete_old_trace:graph",
+    "feishu_doc_index": "deal_pilot.graphs.feishu_doc_index.graph:factory_with_trace"
   },
   "env": ".env",
   "auth": {

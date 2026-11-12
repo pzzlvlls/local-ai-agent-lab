@@ -60,12 +60,18 @@ class RagStoreConfig(BaseModel):
     metric_type: str = Field(description="相似度计算算法", default="COSINE")
 
 
+class SplitterConfig(BaseModel):
+    chunk_size: int = Field(default=1000)
+    chunk_overlap: int = Field(default=200)
+
+
 type MilvusCollection = Literal["feishu_doc"]
 
 
 class RagConfig(BaseModel):
     image_parser: RagImageParser = Field(default_factory=RagImageParser)
     embedding_model: RagEmbeddingModel = Field(default_factory=RagEmbeddingModel)
+    splitter: SplitterConfig = Field(default_factory=SplitterConfig)
     store: dict[MilvusCollection, RagStoreConfig] = Field(
         default_factory=lambda: {
             name: RagStoreConfig() for name in get_args(MilvusCollection.__value__)

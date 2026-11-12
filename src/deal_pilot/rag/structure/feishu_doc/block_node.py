@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
+from typing import TypedDict
 
 from pydantic import JsonValue
 
 from deal_pilot.rag.structure.feishu_doc.block_type import BlockType
+
+
+class BlockNodeDict(TypedDict):
+    """只保存内容和子节点的树形字典，不保存父节点与兄弟引用。"""
+
+    block_id: str
+    block_type: int
+    content: str
+    payload: dict[str, JsonValue]
+    children: list[BlockNodeDict]
 
 
 @dataclass(eq=False, slots=True)
@@ -57,6 +69,33 @@ class BlockNode:
 
     next: BlockNode | None = field(default=None, repr=False)
     """同一父节点下的后一个兄弟；没有时为 None。"""
+
+    def to_dict(self) -> BlockNodeDict:
+        """沿 children 导出子树，省略循环引用；payload 与原节点相互独立。"""
+        return {
+            "block_id": self.block_id,
+            "block_type": int(self.block_type),
+            "content": self.content,
+            "payload": deepcopy(self.payload),
+            "children": [child.to_dict() for child in self.children],
+        }
+
+    @classmethod
+    def from_dict(cls, data: BlockNodeDict) -> BlockNode:
+        """还原树，通过 append 重建 parent、prev、next 引用。"""
+        try:
+            block_type = BlockType(data["block_type"])
+        except ValueError:
+            block_type = data["block_type"]
+        node = cls(
+            block_id=data["block_id"],
+            block_type=block_type,
+            content=data["content"],
+            payload=deepcopy(data["payload"]),
+        )
+        for child in data["children"]:
+            node.append(cls.from_dict(child))
+        return node
 
     def append(self, child: BlockNode) -> None:
         """将 child 及其子树添加到当前节点的子列表末尾。

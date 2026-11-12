@@ -3,8 +3,8 @@
 ## Schema 与索引参数
 
 - `schema.py:create_schema(dim: int) -> CollectionSchema` 同步构造 Schema；`index_params.py` 的 `create_dense_index_params(config: RagStoreConfig) -> IndexParams`、`create_sparse_index_params() -> IndexParams` 分别构造稠密、稀疏索引参数。这些工厂不连接 Milvus、不创建集合或索引、不写入数据。
-- Schema 使用手动主键 `id: VARCHAR(64)`，对应飞书切片 `Document.id`；导出 Markdown 中的 `document_id` 是该 ID 的展示名称，不另设字段。`text` 上限为 2048 字节；切片预算按字符计量，图片/代码还可能整体保留，写入前须另核对 UTF-8 字节长度。
-- 来源字段为 `space_id`、`node_token`、`node_title`、`obj_token`、`revision_id`、`url`、`parent_node_token`，以及 `block_id`、`block_type`、`kind`、`payload`、`order`、`parent_block_id`、`title_path`、`references`。切片位置保存 `chunk_index`、`chunk_count` 和表格专用 `table_row_index`。`payload`、`title_path`、`references` 用 JSON 保留原结构；`parent_block_id`、`table_row_index` 可空。关系 ID 仍指向来源 `block_id`，不能改成切片主键含义。
+- Schema 使用手动主键 `id: VARCHAR(64)`，对应飞书切片 `Document.id`；导出 Markdown 中的 `document_id` 是该 ID 的展示名称，不另设字段。`text` 上限为 10000 字节；切片预算按字符计量，图片/代码还可能整体保留，写入前须另核对 UTF-8 字节长度。已有集合不会由初始化逻辑自动更新此限制，需显式调用字段属性修改接口。
+- 来源字段为 `space_id`、`node_token`、`node_title`、`obj_token`、`revision_id`、`url`、`parent_node_token`，以及 `block_id`、`block_type`、`kind`、`payload`、`order`、`parent_block_id`、`title_path`、`references`。切片位置保存 `chunk_index`、`chunk_count` 和表格专用 `table_row_index`。`payload`、`title_path`、`references` 用 JSON 保留原结构；`parent_node_token`、`parent_block_id`、`table_row_index` 可空。已有集合不会由初始化自动迁移 nullable 属性。关系 ID 仍指向来源 `block_id`，不能改成切片主键含义。
 - 开启动态字段；`dense` 为 `FLOAT_VECTOR`，维度由 `dim` 传入。`text` 开启中文分析器，`text_to_bm25` Function 从正文生成 `sparse` 稀疏向量。
 - `DENSE_INDEX_NAME="dense_index"` 用于 `dense`，类型与度量来自 `RagStoreConfig`，当前没有传入构建参数。`SPARSE_INDEX_NAME="sparse_index"` 用于 `sparse`，固定 `SPARSE_INVERTED_INDEX/BM25`，遍历算法使用服务端默认值；当前没有标量索引。搜索时若显式指定度量，须与相应索引一致。
 
@@ -21,11 +21,12 @@
 
 - `get_store.py:await get_store()` 返回 `langchain_milvus.Milvus`。模块级 `_lock` 串行保护首次创建，成功后 `_store` 缓存同一对象；后续调用不重新初始化或刷新 Nacos 配置。初始化或构造失败时异常原样传播，缓存仍为空，已完成的数据库操作不回滚。
 - 首次调用先 `await init_store()`，再读取 Nacos `rag_config`，使用 `create_embedding_model(config.embedding_model)` 创建 `OpenAIEmbeddings`。连接和数据库来自 `milvus_settings`，集合固定为 `feishu_doc`；字段映射为主键 `id`、正文 `text`、向量 `dense`/`sparse`，稀疏端使用 `BM25BuiltInFunction(text -> sparse)`。开启动态字段，`auto_id=False`、`drop_old=False`，不删除既有集合。
-- 调用方可使用返回对象的 `aadd_documents`、`asimilarity_search` 等异步接口；当前没有从飞书加载、切片到入库的编排，也没有额外的业务写入/检索封装。使用已安装的 `langchain-milvus==0.4.0` 时，`aadd_documents` 不自动取 `Document.id`，须显式传入 `ids=[...]`；metadata 需包含 Schema 中的必填来源字段及切片字段，动态字段不能代替这些字段。
-- 当前 `Milvus(...)` 构造包含同步联网调用，直接运行在 `get_store()` 所在的事件循环中，尚未做阻塞隔离；不能据函数为 async 就视为全程不阻塞。缓存对象持有同步及异步客户端，当前没有统一关闭或缓存重置入口；不要在使用期间关闭后继续复用缓存对象，也不要跨事件循环复用它。
+- 调用方可使用返回对象的 `aadd_documents`、`asimilarity_search` 等异步接口；飞书入库由 `graphs/feishu_doc_index/document_index` 编排，当前调用 `aupsert([str(chunk.id) for chunk in chunks], chunks)`，查询版本和删除旧实体也由该子图负责。使用已安装的 `langchain-milvus==0.4.0` 时，`aadd_documents` 不自动取 `Document.id`，须显式传入 `ids=[...]`；metadata 需包含 Schema 中的必填来源字段及切片字段，动态字段不能代替这些字段。
+- `Milvus(...)` 构造包含同步联网调用，当前通过 `await asyncio.to_thread(Milvus, ...)` 隔离；缓存赋值发生在构造成功后。缓存对象持有同步及异步客户端，当前没有统一关闭或缓存重置入口；不要在使用期间关闭后继续复用缓存对象，也不要跨事件循环复用它。线程隔离不能据此视为整个 SDK 调用链都无阻塞。
 
 ## 验证边界
 
+- 2026-10-23 已通过 `alter_collection_field` 将真实 `deal_pilot.feishu_doc` 集合的 `text.max_length` 从 2048 原地更新为 10000 字节；更新前后均为 195 条，主键、正文、node_token 与 revision_id 的排序摘要一致，集合 ID、已加载状态及 dense/sparse 索引名称未变。没有删除或重建集合，也未重跑索引图。
 - 当前没有对应的存储单元测试或集成测试文件；源码与本地 SDK 参数构造不能证明真实 Milvus 行为。
 - 需要真实验证时使用隔离临时数据库，分别核对首次创建、配置未变、稠密索引重建及数据/稀疏索引保留；Nacos 若使用 Mock，应单独注明，不能称为完整联调。
 - 2026-10-22 已用真实 Nacos、Embedding 服务和 Milvus 手工验证 `get_store()`：隔离数据库 `deal_pilot_get_store_test_20261022_174056_f016a2` 中创建集合，3 个并发调用返回同一缓存对象；通过返回对象的 `aadd_documents(..., ids=...)` 写入 3 条数据，读回正文与全部测试 metadata 一致，稠密向量均为 1024 维，BM25 与混合检索均将退款样例排在首位。另一个进程也成功获取既有集合。测试数据保留，主键为 `get_store_test_20261022_174056_f016a2_1` 至 `_3`；此次未验证索引配置变更或故障恢复。

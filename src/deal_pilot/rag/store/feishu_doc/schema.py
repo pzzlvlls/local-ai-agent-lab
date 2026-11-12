@@ -15,7 +15,7 @@ def create_schema(dim: int) -> CollectionSchema:
     schema.add_field(
         "text",
         DataType.VARCHAR,
-        max_length=2048,
+        max_length=10000,
         enable_analyzer=True,
         analyzer_params={"type": "chinese"},
     )
@@ -33,7 +33,9 @@ def create_schema(dim: int) -> CollectionSchema:
     schema.add_field("order", DataType.INT64)
     schema.add_field("parent_block_id", DataType.VARCHAR, max_length=64, nullable=True)
     schema.add_field("url", DataType.VARCHAR, max_length=200)
-    schema.add_field("parent_node_token", DataType.VARCHAR, max_length=64)
+    schema.add_field(
+        "parent_node_token", DataType.VARCHAR, max_length=64, nullable=True
+    )
     # JSON 保留标题字符串列表、引用对象列表的原始结构。
     schema.add_field("title_path", DataType.JSON)
     schema.add_field("references", DataType.JSON)

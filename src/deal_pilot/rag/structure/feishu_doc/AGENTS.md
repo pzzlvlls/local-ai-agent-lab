@@ -3,7 +3,7 @@
 - 目标：将 `DocxAPI.list_blocks()` 返回的 `list[DocxBlock]` 表达为按标题层级组织的有序树。
 - 选定方案：`block_node.py` 中的 `BlockNode` 使用标准库 dataclass，独立保存 `block_id`、`block_type`、`content` 和 JSON 兼容的 `payload`，不持有 `DocxBlock`；通过 `parent`、`children`、`prev`、`next` 引用其他节点。
 - 原因：节点独立承载 ID、类型和自身内容，通过标题父子关系表达章节归属；payload 提取代码语言及表格行列数、合并信息，其他数据预留用户后续按需添加。所有块共用节点类型，兄弟引用与父节点的有序子列表保持一致。
-- 实现状态：已有节点类型、`append(child)`、`remove()` 关系维护方法及异步 `tree_builder.build_tree(blocks: list[DocxBlock]) -> BlockNode`，调用须 `await build_tree(blocks)`；已实现原始关系校验、按标题层级构树、纯文本、图片 token、代码语言、指定表格属性提取，以及构树完成后按文档顺序串行处理图片。Markdown 格式转换和通用序列化未实现；`image_parser.parse_image_block` 当前仍是异步占位函数，未编排图片下载、上传或模型解析；仅补齐独立辅助函数。
+- 实现状态：已有节点类型、`append(child)`、`remove()` 关系维护方法、`to_dict()` / `from_dict()` 树形转换及异步 `tree_builder.build_tree(blocks: list[DocxBlock]) -> BlockNode`，调用须 `await build_tree(blocks)`；已实现原始关系校验、按标题层级构树、纯文本、图片 token、代码语言、指定表格属性提取，以及构树完成后按文档顺序串行处理图片。Markdown 格式转换由 Loader 负责；`image_parser.parse_image_block` 当前仍是异步占位函数，未编排图片下载、上传或模型解析；仅补齐独立辅助函数。
 - `append(child)` 将节点及其子树移动到子列表末尾，自动脱离原父节点；同父节点内调用会移到末尾，不重复添加。添加自身或祖先时先抛出 ValueError，不改变原树。
 - `remove()` 按对象身份从父节点的子列表中移除当前节点，连接原前后兄弟，清空当前节点的 parent/prev/next；保留内容、payload 和子树内部引用。对根节点或已脱离节点重复调用无副作用；父节点存在但子列表没有当前对象时抛出 ValueError。
 - 方法要求输入树关系一致，并维护父子及兄弟引用；直接赋值或修改 children 不会自动校验，不保证修复任意已损坏的树。
@@ -21,7 +21,7 @@
 - 空输入、空/重复块 ID、非唯一根、缺失父/子块、父子声明不一致、重复子引用、未列入父块 children 的节点、环及图片缺少非空字符串 token 均抛出 `ValueError`，不返回部分树或静默丢弃节点。
 - 构树校验和挂载使用迭代；校验后自底向上用标题栈确定章节父节点，通过 `append` 连接尚未挂载的块，避免深树的递归栈限制和反复移动节点。
 - `prev`、`next` 仅表示同级相邻兄弟；首尾缺失引用为 None，根节点二者均为 None。
-- 父子及兄弟双向引用存在循环；后续导出只沿 children 遍历，不能直接调用 dataclasses.asdict。
+- 父子及兄弟双向引用存在循环，不能直接调用 dataclasses.asdict。`to_dict() -> BlockNodeDict` 只递归导出 block_id、整数 block_type、content、深拷贝 payload 和 children；不保存 parent/prev/next。`BlockNode.from_dict(data)` 将已知类型还原为枚举、未知编号保留为 int，通过 append 重建父子和兄弟引用，并再次深拷贝 payload；索引图据此传递 root 状态。两者为递归实现，不提供任意深树、损坏结构或外部字典的完整校验保证；构树阶段的迭代实现不代表转换方法同样没有递归深度限制。
 - `image_parser._generate_dataurl(data, mime) -> str` 使用标准库 base64；`_upload_minio(data, mime, block_id)` 为 async，
   读取现有 `get_config("rag_config", RagConfig)` 的 image_parser.bucket_name，用标准库 mimetypes 推断后缀，
   保存为桶根目录 `{block_id}{后缀}`，返回 ImageLocation(bucket_name, filename)，Content-Type 使用传入 mime。

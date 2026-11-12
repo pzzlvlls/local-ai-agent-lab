@@ -15,58 +15,60 @@
 
 - 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，以 Deep Agents 组装 Agent，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
 - Langfuse 用于追踪、离线评测和 Webhook；OpenSandbox 提供用户执行环境；MinIO 用于产物存储与交付；模型通过 OpenAI 兼容接口及自定义模型适配层调用。
-- 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；`rag/store/feishu_doc` 已实现 Milvus Schema、索引参数、显式调用的数据库/集合初始化及稠密索引重建，并通过 `get_store()` 返回缓存的 LangChain Milvus 对象，供调用方进行文档向量化写入和稠密/BM25 混合检索。尚未编排飞书文档入库流程，也未接入 Agent 或服务启动流程。
+- 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；`rag/store/feishu_doc` 提供 Milvus 初始化与缓存的 LangChain Milvus 对象，支持文档向量化写入和稠密/BM25 混合检索。`graphs/feishu_doc_index` 已编排目录分批、版本比较、构树、加载、切片、写入和旧版本清理，并注册为独立服务图；运行时显式调用，不在服务启动时自动入库，尚未接入 Agent。图片识图仍为占位，流程限制与验证边界见图模块指令。
 - 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。存储初始化使用 PyMilvus，`get_store()` 使用 `langchain-milvus` 连接该服务；其锁定版本 0.4.0 在非 Windows 平台传递引入 `milvus-lite`，当前运行仍使用 Standalone，不使用本地 Lite 数据库。
-- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用与图片下载；尚未接入 Agent 或 RAG 流程，本地 Mock 测试不代表真实租户验证。
+- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用与图片下载；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具，本地 Mock 测试不代表真实租户验证。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
-- `graphs` 保存手工构建的普通 LangGraph 图，不存放通过 LangChain 或 Deep Agents 创建的 Agent 图；当前包含可调度的清理图。调度计划由外部服务管理，代码中没有自动注册定时计划的逻辑。
+- `graphs` 保存手工构建的普通 LangGraph 图，不存放通过 LangChain 或 Deep Agents 创建的 Agent 图；当前包含清理图和飞书文档索引图。调度计划由外部服务管理，代码中没有自动注册定时计划的逻辑。
 
 ## 架构与目录导航
 
-| 路径                                      | 职责                                                                                                                                                                                |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装                                                                                                                                            |
-| `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook                                                                                                                                                |
-| `src/deal_pilot/config`                   | 环境配置；`nacos` 子目录负责远程资源读取与同步                                                                                                                                      |
-| `src/deal_pilot/security`                 | LangGraph 身份认证与资源授权                                                                                                                                                        |
-| `src/deal_pilot/backends`                 | Deep Agents 后端到 OpenSandbox 的适配                                                                                                                                               |
-| `src/deal_pilot/tools`                    | 模型可调用的工具及注册表                                                                                                                                                            |
-| `src/deal_pilot/middlewares`              | Agent 执行阶段的状态处理                                                                                                                                                            |
-| `src/deal_pilot/utils`                    | 模型、追踪、缓存、存储、沙箱等公共能力                                                                                                                                              |
-| `src/deal_pilot/benchmarks`               | 数据集与实验；`evaluators` 子目录负责评分                                                                                                                                           |
-| `src/deal_pilot/graphs`                   | 手工构建的普通 LangGraph 图及其入口                                                                                                                                                 |
-| `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、图片下载、分页与错误处理；Token 由 SDK 管理                                                                                                 |
-| `src/deal_pilot/rag/structure/feishu_doc` | 异步构树、原始关系校验、标题归组、内容及元数据提取；完整树构建后按文档顺序串行调用图片处理占位函数；提供 Data URL、私有图片上传及上下文辅助函数，尚未接入模型识图、切分、索引或检索 |
-| `src/deal_pilot/rag/loader/feishu_doc`    | 标准树到 LangChain Documents 的本地结构提取；父子占位引用、Markdown 正文、HTML 表格与合并校验，不按长度切片                                                                         |
-| `src/deal_pilot/rag/splitter/feishu_doc`  | 结构 Documents 的本地进一步切片；图片/代码整体保留，表格首行表头加单行，页面/章节按段落、句子和长度切分，保护占位符并保留目标 overlap                                               |
-| `src/deal_pilot/rag/store/feishu_doc`     | Milvus Schema 与索引参数、数据库/集合初始化及稠密索引重建；缓存返回支持文档写入和稠密/BM25 混合检索的 LangChain Milvus 对象                                                         |
-| `resource/store`                          | 存储代码副本，与正式源码存在维度和导入差异；使用前核对本目录指令，不能视为独立可用实现                                                                                              |
-| `tests/units`                             | 函数缓存、飞书 Mock、文档构树、Documents 结构提取及进一步切片单元测试                                                                                                               |
-| `tests/intergrations`                     | MinIO 与 Deploy 集成测试，保留现有目录拼写                                                                                                                                          |
-| `tests/benchmarks`                        | 依赖真实 Agent 和 Langfuse 的质量回归                                                                                                                                               |
-| `docker/sandbox/Dockerfile`               | 沙箱镜像，包含部署所需的上传工具                                                                                                                                                    |
+| 路径                                      | 职责                                                                                                                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装                                                                                                                                    |
+| `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook                                                                                                                                        |
+| `src/deal_pilot/config`                   | 环境配置；`nacos` 子目录负责远程资源读取与同步                                                                                                                              |
+| `src/deal_pilot/security`                 | LangGraph 身份认证与资源授权                                                                                                                                                |
+| `src/deal_pilot/backends`                 | Deep Agents 后端到 OpenSandbox 的适配                                                                                                                                       |
+| `src/deal_pilot/tools`                    | 模型可调用的工具及注册表                                                                                                                                                    |
+| `src/deal_pilot/middlewares`              | Agent 执行阶段的状态处理                                                                                                                                                    |
+| `src/deal_pilot/utils`                    | 模型、追踪、缓存、存储、沙箱等公共能力                                                                                                                                      |
+| `src/deal_pilot/benchmarks`               | 数据集与实验；`evaluators` 子目录负责评分                                                                                                                                   |
+| `src/deal_pilot/graphs`                   | 手工构建的普通 LangGraph 图及其入口                                                                                                                                         |
+| `src/deal_pilot/graphs/feishu_doc_index`  | 飞书目录分批扇出与统计；单文档子图负责版本比较、解析切片、Milvus 写入和旧版本实体清理                                                                                       |
+| `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、图片下载、分页与错误处理；Token 由 SDK 管理                                                                                         |
+| `src/deal_pilot/rag/structure/feishu_doc` | 异步构树、原始关系校验、标题归组、内容及元数据提取、树形字典导出与还原；完整树构建后串行调用图片处理占位函数；提供 Data URL、私有图片上传及上下文辅助函数，尚未接入模型识图 |
+| `src/deal_pilot/rag/loader/feishu_doc`    | 标准树到 LangChain Documents 的本地结构提取；父子占位引用、Markdown 正文、HTML 表格与合并校验，不按长度切片                                                                 |
+| `src/deal_pilot/rag/splitter/feishu_doc`  | 结构 Documents 的本地进一步切片；图片/代码整体保留，表格首行表头加单行，页面/章节按段落、句子和长度切分，保护占位符并保留目标 overlap                                       |
+| `src/deal_pilot/rag/store/feishu_doc`     | Milvus Schema 与索引参数、数据库/集合初始化及稠密索引重建；缓存返回支持文档写入和稠密/BM25 混合检索的 LangChain Milvus 对象                                                 |
+| `tests/units`                             | 函数缓存、飞书 Mock、文档构树、Documents 结构提取及进一步切片单元测试                                                                                                       |
+| `tests/intergrations`                     | MinIO 与 Deploy 集成测试，保留现有目录拼写                                                                                                                                  |
+| `tests/benchmarks`                        | 依赖真实 Agent 和 Langfuse 的质量回归                                                                                                                                       |
+| `docker/sandbox/Dockerfile`               | 沙箱镜像，包含部署所需的上传工具                                                                                                                                            |
 
-运行入口由 `langgraph.json` 定义：`main_agent` 指向追踪包装后的 Agent 工厂，`delete_old_trace` 指向清理图；鉴权入口是 `security.auth:auth`，自定义 HTTP 应用是 `app.main:app`。调整导出名称或模块路径时同步检查该文件。
+运行入口由 `langgraph.json` 定义：`main_agent` 指向追踪包装后的 Agent 工厂，`delete_old_trace` 指向清理图，`feishu_doc_index` 指向 `deal_pilot.graphs.feishu_doc_index.graph:factory_with_trace`；鉴权入口是 `security.auth:auth`，自定义 HTTP 应用是 `app.main:app`。调整导出名称或模块路径时同步检查该文件。
 
 ## 环境与常用命令
 
 - 从项目根目录执行命令。Python 版本按 `pyproject.toml` 固定为 `3.13.11`，依赖使用 uv 管理，安装用 `uv sync`。
 - 配置项见 `.env.example` 和各 Settings 类。不要将实际 `.env` 内容、访问密钥或令牌写入文档、日志和测试输出。
 
-| 命令                                                                                                                               | 用途与前提                                                                              |
-| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `make dev`                                                                                                                         | 启动 LangGraph 开发服务，端口 80；按配置依赖外部服务                                    |
-| `make debug`                                                                                                                       | 开发服务另开调试端口 5678                                                               |
-| `docker compose up -d --wait milvus`                                                                                               | 仅启动 Milvus Standalone 及其专用 etcd、MinIO，并等待健康检查                           |
-| `make build TAG=<镜像标签>`                                                                                                        | 构建 Agent 服务镜像                                                                     |
-| `make test-units`                                                                                                                  | 本地缓存、飞书 Mock、文档构树、Documents 结构提取及进一步切片单元测试，无需启动外部服务 |
-| `MINIO_INTEGRATION=1 uv run pytest -q tests/intergrations/test_minio.py`                                                           | 仅验证真实 MinIO，使用随机测试桶                                                        |
-| `MINIO_INTEGRATION=1 DEPLOY_INTEGRATION=1 DEPLOY_SANDBOX_IMAGE=<已准备的镜像> uv run pytest -q tests/intergrations/test_deploy.py` | 真实 MinIO 与 OpenSandbox 部署验证                                                      |
-| `make test-integrations`                                                                                                           | 当前 Makefile 同时启用 MinIO 和 Deploy，并固定镜像为 `opensandbox-python-node:1.0`      |
-| `make test-benchmark DS=<数据集名称>`                                                                                              | 对指定真实数据集评测，会调用 Agent 和模型并记录实验                                     |
-| `make test-benchmark DS=all`                                                                                                       | 对全部数据集评测，注意调用量和费用                                                      |
+| 命令                                                                                                                               | 用途与前提                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `make dev`                                                                                                                         | 启动 LangGraph 开发服务，端口 80；禁用热重载（--no-reload），代码改动需手动重启；按配置依赖外部服务 |
+| `make debug`                                                                                                                       | 开发服务另开调试端口 5678                                                                           |
+| `docker compose up -d --wait milvus`                                                                                               | 仅启动 Milvus Standalone 及其专用 etcd、MinIO，并等待健康检查                                       |
+| `make build TAG=<镜像标签>`                                                                                                        | 构建 Agent 服务镜像                                                                                 |
+| `make test-units`                                                                                                                  | 本地缓存、飞书 Mock、文档构树、Documents 结构提取及进一步切片单元测试，无需启动外部服务             |
+| `MINIO_INTEGRATION=1 uv run pytest -q tests/intergrations/test_minio.py`                                                           | 仅验证真实 MinIO，使用随机测试桶                                                                    |
+| `MINIO_INTEGRATION=1 DEPLOY_INTEGRATION=1 DEPLOY_SANDBOX_IMAGE=<已准备的镜像> uv run pytest -q tests/intergrations/test_deploy.py` | 真实 MinIO 与 OpenSandbox 部署验证                                                                  |
+| `make test-integrations`                                                                                                           | 当前 Makefile 同时启用 MinIO 和 Deploy，并固定镜像为 `opensandbox-python-node:1.0`                  |
+| `make test-benchmark DS=<数据集名称>`                                                                                              | 对指定真实数据集评测，会调用 Agent 和模型并记录实验                                                 |
+| `make test-benchmark DS=all`                                                                                                       | 对全部数据集评测，注意调用量和费用                                                                  |
 
 `make docker-recreate` 会强制重建 Compose 容器，不是普通测试的准备步骤。集成测试不会替你启动服务或构建镜像；详细测试契约见 `tests/intergrations/README.md`，若其命令说明与 Makefile 不一致，以实际 Makefile 和测试启用条件为准。
+
+`make dev` / `make debug` 使用 `--no-reload` 禁用文件热重载：langgraph-api 0.14.4 在 Windows 上 watchfiles 会误报 `.venv` 等目录变化导致反复重启，因此代码改动后需手动重启服务。
 
 Milvus SDK 端口为 `127.0.0.1:19530`，健康检查及 WebUI 为 `127.0.0.1:9091`；专用 MinIO API / 控制台为 `127.0.0.1:19000` / `127.0.0.1:19001`。Milvus 容器设置 `TZ=Asia/Shanghai` 使用东八区；WebUI 日期显示需另行核对，不能仅凭容器时区推断。当前是未启用 Milvus 身份认证的本地开发部署，MinIO 凭据不用于 Milvus 登录。部署修改检查 Compose 配置、服务健康和实际 SDK 读写；不要用 `down -v` 清理测试。新命名卷利用镜像目录的 UID/GID `999:999` 初始化权限，恢复外部数据卷后需另行核对所有权。
 

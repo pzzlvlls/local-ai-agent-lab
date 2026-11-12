@@ -17,10 +17,10 @@ build:
 	$(LANGGRAPH) build -t langgraph-python-agent:$(TAG)
 
 dev:
-	$(LANGGRAPH) dev --host $(HOST) --port $(PORT) --allow-blocking
+	$(LANGGRAPH) dev --host $(HOST) --port $(PORT) --allow-blocking --no-reload
 
 debug:
-	$(LANGGRAPH) dev --host $(HOST) --port $(PORT) --debug-port 5678 --allow-blocking
+	$(LANGGRAPH) dev --host $(HOST) --port $(PORT) --debug-port 5678 --allow-blocking --no-reload
 
 course:
 	$(PYTHON) scripts/course.py
