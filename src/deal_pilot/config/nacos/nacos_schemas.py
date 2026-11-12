@@ -68,6 +68,18 @@ class SplitterConfig(BaseModel):
 type MilvusCollection = Literal["feishu_doc"]
 
 
+class RerankerConfig(BaseModel):
+    reranker: Literal["rrf", "weighted", "model"] = Field(default="rrf")
+    params: dict = Field(default_factory=dict)
+
+
+class RetrieverConfig(BaseModel):
+    fetch_k: int = Field(default=10)
+    k: int = Field(default=4)
+    param: dict | None = Field(default=None)
+    reranker: RerankerConfig = Field(default_factory=RerankerConfig)
+
+
 class RagConfig(BaseModel):
     image_parser: RagImageParser = Field(default_factory=RagImageParser)
     embedding_model: RagEmbeddingModel = Field(default_factory=RagEmbeddingModel)
@@ -77,3 +89,4 @@ class RagConfig(BaseModel):
             name: RagStoreConfig() for name in get_args(MilvusCollection.__value__)
         }
     )
+    retriever: RetrieverConfig = Field(default_factory=RetrieverConfig)

@@ -1,0 +1,60 @@
+# Nacos 通用配置 rag_config 的 YAML 内容示例；此文件不会自动加载。
+image_parser:
+  bucket_name: feishu-images
+  sibling_count: 3
+  vl_model_config:
+    # 替换为实际可用且支持图片理解的模型；省略 name 时使用 OPENAI_DEFAULT_MODEL。
+    name: '替换为支持图片理解的模型名称'
+    thinking: true
+    temperature: null
+    top_p: null
+  image_parser_prompt: image_parser_prompt
+
+embedding_model:
+  model_name: text-embedding
+  chunk_size: 10 # Embedding 请求批量大小
+  dimensions: 1024
+
+splitter:
+  chunk_size: 1000 # 正文切片长度，单位为字符
+  chunk_overlap: 200
+
+store:
+  feishu_doc:
+    index_type: HNSW
+    metric_type: COSINE
+
+# 字段拼写与当前 RagConfig 保持一致：retriever。
+# 调用 search 时需要显式传入 config=rag_config.retriever。
+retriever:
+  fetch_k: 10 # 每路召回的候选数量
+  k: 4 # 重排后最终返回的数量
+
+  # 按 vector_field=["dense", "sparse"] 的顺序提供两路检索参数。
+  param:
+    - metric_type: COSINE
+      params:
+        ef: 64 # HNSW 搜索范围，应不小于 fetch_k
+    - metric_type: BM25
+      params: {}
+
+  reranker:
+    reranker: rrf
+    params:
+      k: 60 # RRF 排名平滑参数，与最终返回数量 k 不同
+
+
+  # 加权融合：用下面的配置替换上面的 reranker。
+  # 当前实现固定启用 norm_score=true，无需配置。
+  # reranker:
+  #   reranker: weighted
+  #   params:
+  #     weights: [0.7, 0.3]  # 依次对应 dense、sparse
+
+  # 模型重排：用下面的配置替换上面的 reranker。
+  # 当前实现固定 provider=cohere；Milvus 端需配置对应的模型服务。
+  # queries 自动使用当前问题，评分字段固定为 text。
+  # reranker:
+  #   reranker: model
+  #   params:
+  #     model_name: rerank
