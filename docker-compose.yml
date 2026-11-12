@@ -263,6 +263,7 @@ services:
     volumes:
       # 使用新命名卷，避免加载其他练习留下的 milvus_data。
       - milvus_standalone_data:/var/lib/milvus
+      - ./docker/milvus/user.yaml:/milvus/configs/user.yaml:ro
     depends_on:
       milvus-etcd:
         condition: service_healthy
@@ -352,4 +353,3 @@ volumes:
   milvus_standalone_data:
   milvus_standalone_etcd_data:
   milvus_standalone_minio_data:
-

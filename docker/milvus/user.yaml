@@ -1,0 +1,12 @@
+# 填写与课件中相同的 API Key 和完整文本重排 Endpoint。
+credential:
+  qwen_rerank:
+    apikey: "sk-TV2TqdojjLJm-f12-4M1zQ"
+
+function:
+  rerank:
+    model:
+      providers:
+        cohere:
+          credential: qwen_rerank
+          url: "http://host.docker.internal:4000/rerank"
