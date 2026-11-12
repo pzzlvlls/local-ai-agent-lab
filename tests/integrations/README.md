@@ -2,7 +2,7 @@
 
 按 `src/deal_pilot/utils/minio.py` 的公开契约验收，不依赖实现细节，不 Mock S3 或 HTTP；图片辅助函数用例仅替换 Nacos 配置读取与 MinIO 连接配置。
 Deploy 的远程用例需要同时准备真实 MinIO 和具有上传依赖的 OpenSandbox 镜像后验收。
-目录按要求保留拼写 `tests/intergrations`，Makefile 命令为 `test-integrations`。
+目录为 `tests/integrations`，Makefile 命令为 `test-integrations`。
 
 ## 复现
 
@@ -32,7 +32,7 @@ Deploy 的远程用例需要同时准备真实 MinIO 和具有上传依赖的 Op
 4. 只运行部分场景：
 
    ```sh
-   MINIO_INTEGRATION=1 uv run pytest -q tests/intergrations -k presigned
+   MINIO_INTEGRATION=1 uv run pytest -q tests/integrations -k presigned
    ```
 
 未设置 `MINIO_INTEGRATION=1` 时跳过，避免普通 `pytest` 意外写入远程服务。
@@ -126,7 +126,7 @@ Deploy 的远程用例需要同时准备真实 MinIO 和具有上传依赖的 Op
   学生执行同一命令即可准备。测试不会自动构建镜像。
 
 ```sh
-MINIO_INTEGRATION=1 DEPLOY_INTEGRATION=1 DEPLOY_SANDBOX_IMAGE=deal-pilot-sandbox:deploy-it uv run pytest -q tests/intergrations/test_deploy.py
+MINIO_INTEGRATION=1 DEPLOY_INTEGRATION=1 DEPLOY_SANDBOX_IMAGE=deal-pilot-sandbox:deploy-it uv run pytest -q tests/integrations/test_deploy.py
 ```
 
 只设置 `MINIO_INTEGRATION=1`（包括现有 `make test-integrations`）不会创建沙箱。
@@ -157,3 +157,17 @@ MINIO_INTEGRATION=1 DEPLOY_INTEGRATION=1 DEPLOY_SANDBOX_IMAGE=deal-pilot-sandbox
 生产 LLM 选择工具过程、完整 Agent Server 鉴权或 Nacos 配置服务。
 守卫覆盖项目现有 SDK 入口，并不声称证明任意自定义 HTTP 客户端都不会中转。
 工具尚未实现时，本套远程测试不使用 xfail 或自动跳过来伪装通过。
+
+## Milvus Schema 与知识库标题回填
+
+```sh
+MILVUS_INTEGRATION=1 uv run pytest -q tests/integrations/test_feishu_doc_schema.py
+```
+
+此测试只需要当前 `MilvusSettings.uri` 指向的真实 Milvus；不启动或重启服务。
+使用随机 `feishu_schema_it_<UUID>` 数据库，结束时仅清理该库及其集合。
+Nacos 配置和飞书空间名称使用 Mock，不调用模型或修改已有业务集合。
+未设置 `MILVUS_INTEGRATION=1` 时跳过；显式启用后的连接和功能错误会失败。
+覆盖首次创建、旧集合新增字段和长度扩容、重复初始化、维度差异保护、
+历史标题分批局部更新和再次回填为零、原字段/动态字段/稠密向量保留、
+稠密索引重建，以及更新后的 BM25 和稠密检索。

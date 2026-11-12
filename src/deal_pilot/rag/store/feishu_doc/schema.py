@@ -22,6 +22,8 @@ def create_schema(dim: int) -> CollectionSchema:
 
     # 来源结构：关系字段仍指向原 block_id，而不是切片 id。
     schema.add_field("space_id", DataType.VARCHAR, max_length=64)
+    # 已有集合原地新增字段要求可空；历史数据由 backfill_space_titles 回填。
+    schema.add_field("space_title", DataType.VARCHAR, max_length=300, nullable=True)
     schema.add_field("node_token", DataType.VARCHAR, max_length=64)
     schema.add_field("node_title", DataType.VARCHAR, max_length=300)
     schema.add_field("obj_token", DataType.VARCHAR, max_length=64)

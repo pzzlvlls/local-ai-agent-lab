@@ -13,7 +13,7 @@
 构建 metadata → 读取正文 → 结构化 → Loader → Splitter → 写入切片 → 清理旧版本实体 → 收尾。
 
 - fetch_document_version 用 node.obj_token 调用 DocxAPI.get_document。compare_versions 通过 `store.aclient.query` 按 `obj_token == document.document_id` 查询 revision_id，limit=1；无记录或第一条记录版本不同则需要索引。当前不按 node_token 隔离、不排序，也不检查所有切片是否完整；同文档被多个 Wiki 节点引用或混合版本时不能据此保证判断准确。
-- metadata 保存 space_id、node_token、node_title、obj_token、parent_node_token、url 和本次读取的 revision_id。
+- metadata 保存 space_id、space_title、node_token、node_title、obj_token、parent_node_token、url 和本次读取的 revision_id。build_metadata 通过 WikiAPI.get_space(node.space_id) 获取空间 name 作为 space_title；不存在则抛错，权限/服务错误原样传播。只有需要重新索引的文档才调用该节点，历史缺失标题由存储模块的显式 backfill_space_titles 入口回填。
 - fetch_document_content 当前只调用 `list_blocks(document.document_id)`，没有传 document_revision_id，实际使用 API 默认的最新版本。不能按函数注释宣称正文固定为元信息版本；两次读取之间文档变化时没有一致性校验。
 - structure_document、load_documents 复用现有构树与 Loader；图片处理入口仍为占位，没有在此补充模型识图流程。
 - split_documents 读取 Nacos rag_config.splitter，显式传入 chunk_size、chunk_overlap；默认分别为 1000、200，单位为字符，与切片函数直接调用的 overlap 默认值 100 区分。
@@ -24,5 +24,5 @@
 
 ## 验证边界
 
-- 当前没有 `tests/units/test_feishu_doc_index.py`，也没有本子图的专门自动化测试。现有构树、Loader、Splitter 单元测试只覆盖各自本地能力，不能作为整条流水线验证。
-- 本次只核对源码与指令，未执行真实索引或外部服务联调。后续验证需分别检查跳过、首次写入、版本更新、部分写入失败和旧版本清理失败，记录实际服务与数据范围；不能将构图或类型检查称为入库成功。
+- 当前没有整条子图的专门自动化测试；`tests/units/test_feishu_doc_schema.py` 覆盖 build_metadata 写入 space_title 的 Mock 契约。现有构树、Loader、Splitter 单元测试只覆盖各自本地能力，不能作为整条流水线验证。
+- 本子图尚未端到端执行真实索引；build_metadata 的 space_title 写入已完成 Mock 验证，存储模块已独立完成真实历史标题回填。后续整图验证需分别检查跳过、首次写入、版本更新、部分写入失败和旧版本清理失败，记录实际服务与数据范围；不能将构图或类型检查称为入库成功。

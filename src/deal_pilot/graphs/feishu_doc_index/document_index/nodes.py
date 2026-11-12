@@ -7,7 +7,7 @@ from deal_pilot.config.nacos.nacos_schemas import RagConfig
 from deal_pilot.graphs.feishu_doc_index.document_index.state import (
     DocumentIndexState,
 )
-from deal_pilot.feishu.api import DocxAPI
+from deal_pilot.feishu.api import DocxAPI, WikiAPI
 from deal_pilot.rag.loader.feishu_doc.feishu_doc_loader import load_feishu_doc_structre
 from deal_pilot.rag.store.feishu_doc.get_store import get_store, COLLECTION_NAME
 from deal_pilot.rag.structure.feishu_doc.block_node import BlockNode
@@ -62,9 +62,13 @@ async def build_metadata(state: DocumentIndexState) -> DocumentIndexState:
     node = state.get("node")
     assert doc is not None
     assert node is not None
+    space = await WikiAPI().get_space(node.space_id)
+    if space is None:
+        raise ValueError(f"知识空间 {node.space_id} 不存在，无法读取标题")
     return {
         "metadata": {
             "space_id": node.space_id,
+            "space_title": space.name,
             "node_token": node.node_token,
             "node_title": node.title,
             "obj_token": node.obj_token,

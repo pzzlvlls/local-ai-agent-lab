@@ -11,12 +11,13 @@ from deal_pilot.rag.store.feishu_doc.index_params import (
     has_index_changed,
 )
 from deal_pilot.rag.store.feishu_doc.schema import create_schema
+from deal_pilot.rag.store.feishu_doc.sync_schema import sync_schema
 
 COLLECTION_NAME = "feishu_doc"
 
 
 async def init_store() -> None:
-    """确保数据库和飞书集合存在，稠密索引类型或度量变化时重建。"""
+    """初始化数据库、同步 Schema，稠密索引类型或度量变化时重建。"""
     rag_config = await get_config("rag_config", RagConfig)
     config = rag_config.store[COLLECTION_NAME]
     client = AsyncMilvusClient(uri=milvus_settings.uri)
@@ -39,14 +40,20 @@ async def init_store() -> None:
                 index_params=create_sparse_index_params(),
             )
             await client.load_collection(collection_name=COLLECTION_NAME)
-        elif await has_index_changed(
-            config, COLLECTION_NAME, DENSE_INDEX_NAME, client=client
-        ):
-            await drop_index(COLLECTION_NAME, client=client)
-            await client.create_index(
-                collection_name=COLLECTION_NAME,
-                index_params=create_dense_index_params(config),
+        else:
+            await sync_schema(
+                COLLECTION_NAME,
+                create_schema(rag_config.embedding_model.dimensions),
+                client=client,
             )
-            await client.load_collection(collection_name=COLLECTION_NAME)
+            if await has_index_changed(
+                config, COLLECTION_NAME, DENSE_INDEX_NAME, client=client
+            ):
+                await drop_index(COLLECTION_NAME, client=client)
+                await client.create_index(
+                    collection_name=COLLECTION_NAME,
+                    index_params=create_dense_index_params(config),
+                )
+                await client.load_collection(collection_name=COLLECTION_NAME)
     finally:
         await client.close()
