@@ -8,6 +8,7 @@ from functools import lru_cache
 import lark_oapi as lark
 from lark_oapi.api.docx.v1.version import V1 as DocxV1
 from lark_oapi.api.drive.v1.version import V1 as DriveV1
+from lark_oapi.api.im.v1.version import V1 as ImV1
 from lark_oapi.api.wiki.v2.version import V2 as WikiV2
 from lark_oapi.core.exception import ObtainAccessTokenException, UnmarshalException
 from lark_oapi.core.model import BaseResponse
@@ -25,8 +26,14 @@ from deal_pilot.feishu.api.errors import (
 
 @lru_cache(maxsize=1)
 def _build_client(app_id: str, app_secret: str) -> lark.Client:
-    return (lark.Client.builder().app_id(app_id).app_secret(app_secret)
-            .timeout(30).log_level(lark.LogLevel.ERROR).build())
+    return (
+        lark.Client.builder()
+        .app_id(app_id)
+        .app_secret(app_secret)
+        .timeout(30)
+        .log_level(lark.LogLevel.ERROR)
+        .build()
+    )
 
 
 def _client() -> lark.Client:
@@ -52,6 +59,12 @@ def drive_client() -> DriveV1:
     client = _client()
     assert client.drive is not None
     return client.drive.v1
+
+
+def im_client() -> ImV1:
+    client = _client()
+    assert client.im is not None
+    return client.im.v1
 
 
 def resource_id(value: str, name: str) -> str:
@@ -81,7 +94,9 @@ async def sdk_response[T: BaseResponse](operation: Callable[[], T]) -> T:
     raw = response.raw
     if raw is None or type(raw.status_code) is not int:
         raise FeishuResponseError("飞书 SDK 响应缺少有效的 HTTP 状态")
-    log_id = next((v for k, v in raw.headers.items() if k.lower() == "x-tt-logid"), None)
+    log_id = next(
+        (v for k, v in raw.headers.items() if k.lower() == "x-tt-logid"), None
+    )
     if raw.status_code >= 500:
         raise FeishuHTTPError(raw.status_code, log_id)
     if type(response.code) is not int:

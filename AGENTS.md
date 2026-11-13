@@ -20,7 +20,7 @@
 - 内置工具注册表已加入 `milvus_search` 和 `milvus_query`，分别复用 Nacos 检索配置执行混合检索、通过异步 Milvus 客户端按标量条件补查切片；工具契约见 `src/deal_pilot/tools/AGENTS.md`。第 38 节课件提供自主检索与结构补查提示词，仍以现有中间件的首轮材料为起点；使用工具需配置远程 AgentSpec，不据本地注册推断已启用。工具未实现用户级知识空间授权，首次调用可能触发存储初始化；本轮未做真实服务验证。
 - `benchmarks` 按 Langfuse 数据集名称选择评测配置，当前仅注册 `retrieve`，评测其结构化回答的来源精准率、来源召回率、回答正确性和完整性；LLM 评分 Prompt 优先读取 Nacos，空 Prompt 使用内置模板。回归报告逐项读取 `Evaluation.metadata.test.threshold` 判定，不再使用固定的总体相似度；评分口径与验证边界见 `src/deal_pilot/benchmarks/AGENTS.md` 和 `src/deal_pilot/benchmarks/evaluators/AGENTS.md`。第 37 节课件说明质量评估方法，`resource/评测数据集` 提供 CSV，不会自动导入 Langfuse。
 - 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。存储初始化使用 PyMilvus，`get_store()` 使用 `langchain-milvus` 连接该服务；其锁定版本 0.4.0 在非 Windows 平台传递引入 `milvus-lite`，当前运行仍使用 Standalone，不使用本地 Lite 数据库。
-- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用与图片下载；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具，本地 Mock 测试不代表真实租户验证。
+- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用、图片下载和用户文本消息发送；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具。`feishu/event` 提供子进程 WebSocket 监听与主进程回调分发，`event` 负责业务回调注册和文本回显；FastAPI lifespan 已接入启动与关闭，启动不等待远程连接就绪，缺少飞书凭据会导致启动失败。当前回调将收到的文本单聊发送给发送者，未接入 Agent、索引或用户身份映射；消息发送、事件监听及生命周期暂无专门测试，未做真实租户验证。第 39 节课件提供消息监听与发送示例。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
 - `graphs` 保存手工构建的普通 LangGraph 图，不存放通过 LangChain 或 Deep Agents 创建的 Agent 图；当前包含清理图和飞书文档索引图。调度计划由外部服务管理，代码中没有自动注册定时计划的逻辑。
 
@@ -29,7 +29,8 @@
 | 路径                                      | 职责                                                                                                                                                                        |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装及独立检索 Agent                                                                                                                    |
-| `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook                                                                                                                                        |
+| `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook、飞书监听生命周期接入                                                                                                                  |
+| `src/deal_pilot/event`                    | 飞书业务事件回调注册、监听启停与文本回显                                                                                                                                    |
 | `src/deal_pilot/config`                   | 环境配置；`nacos` 子目录负责远程资源读取与同步                                                                                                                              |
 | `src/deal_pilot/security`                 | LangGraph 身份认证与资源授权                                                                                                                                                |
 | `src/deal_pilot/backends`                 | Deep Agents 后端到 OpenSandbox 的适配                                                                                                                                       |
@@ -39,7 +40,7 @@
 | `src/deal_pilot/benchmarks`               | 数据集与按名称选择的实验配置；`evaluators` 子目录负责 Agent 任务、来源指标及 LLM 回答评分                                                                                   |
 | `src/deal_pilot/graphs`                   | 手工构建的普通 LangGraph 图及其入口                                                                                                                                         |
 | `src/deal_pilot/graphs/feishu_doc_index`  | 飞书目录分批扇出与统计；单文档子图负责版本比较、解析切片、Milvus 写入和旧版本实体清理                                                                                       |
-| `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、图片下载、分页与错误处理；Token 由 SDK 管理                                                                                         |
+| `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、图片下载、用户文本发送与长连接事件监听；Token 由 SDK 管理                                                                           |
 | `src/deal_pilot/rag/structure/feishu_doc` | 异步构树、原始关系校验、标题归组、内容及元数据提取、树形字典导出与还原；完整树构建后串行调用图片处理占位函数；提供 Data URL、私有图片上传及上下文辅助函数，尚未接入模型识图 |
 | `src/deal_pilot/rag/loader/feishu_doc`    | 标准树到 LangChain Documents 的本地结构提取；父子占位引用、Markdown 正文、HTML 表格与合并校验，不按长度切片                                                                 |
 | `src/deal_pilot/rag/splitter/feishu_doc`  | 结构 Documents 的本地进一步切片；图片/代码整体保留，表格首行表头加单行，页面/章节按段落、句子和长度切分，保护占位符并保留目标 overlap                                       |

@@ -2,9 +2,16 @@
 
 ## 职责与入口
 
-- `main.py:app` 是 `langgraph.json` 挂载的 FastAPI 应用，负责注册路由。
+- `main.py:app` 是 `langgraph.json` 挂载的 FastAPI 应用，负责注册路由及飞书监听的 lifespan。
 - `alert_webhook.py` 接收 `/api/webhooks/langfuse/alerts`。
 - `experiment_webhook.py` 接收 `/api/webhooks/langfuse/experiments`，通过 BackgroundTasks 启动指定数据集评测。
+
+## 飞书监听生命周期
+
+- `lifespan` 在 yield 前 await `event/listener.py:start_feishu_events()`，注册业务回调并启动监听；当前没有启用开关，缺少 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 会抛出配置错误并阻止启动。启动只确认本地监听资源创建，不等待远程连接就绪。
+- yield 所在的 try/finally 退出时，通过 `await asyncio.to_thread(cancel_feishu_events)` 关闭整个监听器；该调用不只是注销回调，也不等待或取消已提交的业务任务。启动调用位于 try 之前，启动异常不会进入此 finally。
+- 单例按进程生效，关闭后不能重新启动；不要假设同进程多次 lifespan 可以重用已关闭的监听器。应用当前没有轮询 `error` / `raise_if_failed` 或将监听故障接入健康检查。
+- 业务处理见 `../event/AGENTS.md`，底层长连接与分发见 `../feishu/event/AGENTS.md`；此处不直接解析飞书事件，也不新增飞书 HTTP Webhook 路由。
 
 ## 核心约束
 
@@ -21,3 +28,4 @@
 - 新路由在 `main.py` 显式注册；输入 schema、状态码或任务触发方式变化时检查 Webhook 调用方。
 - 验证有效签名、无密钥、错误签名和错误输入；检查无效请求不会触发实验。
 - 路由测试可替换后台实验函数，避免意外调用模型；真实 Webhook 与实验验证需要对应外部服务。当前没有专门的路由测试，不把其他测试的通过当作路由验证。
+- 当前也没有 lifespan 专门测试；测试应用生命周期时应替换飞书启停函数，避免启动真实子进程、连接飞书或触发文本发送。本轮仅核对源码与指令，未启动服务验证。
