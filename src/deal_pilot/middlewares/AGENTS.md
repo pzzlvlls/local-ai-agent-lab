@@ -4,6 +4,7 @@
 
 - `turn_summary.py` 提供 `@after_agent` 中间件，由 `MainAgentFactory.get_middlewares()` 挂载，生成状态字段 `turn_summary`。
 - `retrieve_context.py` 提供 `@before_agent` 中间件，由 `RetrieveAgentFactory.get_middlewares()` 挂载，在模型执行前检索并追加参考材料。
+- 检索中间件使用 LangChain `AgentState`，不依赖 Deep Agents 的文件、待办或其他扩展状态；主 Agent 的轮次中间件仍使用其独立状态契约。
 
 ## 轮次摘要契约
 

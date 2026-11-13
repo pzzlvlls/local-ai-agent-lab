@@ -11,7 +11,7 @@
 ## 数据与追踪流程
 
 - 检索任务将每个 DatasetItem 的 input 作为单条用户消息发送到 `retrieve_agent`，`thread_id=None`；返回状态的 `structured_response` 作为实验输出。
-- 通过 `BENCHMARK_AGENT_SERVER` 选择服务，检索任务显式指定图名，未使用 `BENCHMARK_GRAPH_ID`。`BENCHMARK_USER_ID` 当前被直接用作 Bearer token，名称不代表它可以绕过认证。
+- 通过 `BENCHMARK_AGENT_SERVER` 选择服务，检索任务显式指定图名，未使用 `BENCHMARK_GRAPH_ID`。`BENCHMARK_USER_ID` 作为可信评测入口的用户身份，调用前通过 `security/agent_token.py:create_agent_token` 签发短期 JWT，再作为 Bearer token 请求；调用端和 Server 必须配置相同的 `AGENT_TOKEN_SECRET`，不再将明文用户 ID 当作 token。
 - 任务将当前 trace_id、parent_span_id 和 environment 写入运行 metadata，由 Agent 追踪包装关联；不要丢失这些字段造成实验与 Agent trace 断开。
 - `retrieve` 注册四项评分：`retrieve_precision`、`retrieve_recall`、`correctness` 和 `completeness`，当前均返回 0.8 阈值，未配置组合评分。来源指标比较 Agent 输出的 `sources[].title` 与数据集 `metadata.related_documents` 的去重集合，不直接读取检索器原始候选；回答指标只提取 `answer` 交给 LLM 评分。
 
@@ -29,3 +29,5 @@
 运行实验会调用真实 Agent、配置的评分器并写入 Langfuse，可能产生模型费用及远程记录。先选择受影响的单个数据集；全量评测按任务需要运行。缺少服务或配置时先验证数据转换和追踪参数，并明确真实质量回归未运行。不要对纯文档改动自动启动实验。
 
 `tests/units/test_benchmark_report.py` 使用本地实验结果验证逐指标阈值、无效数值、缺失或重复评分、未完成及空数据集与报告展示，不调用真实服务。可运行 `.venv/bin/pytest -q tests/units/test_benchmark_report.py`；该测试不验证来源公式、LLM 评分效果或真实 Agent 链路。
+
+`tests/units/test_agent_token.py` 通过 Mock HTTP 验证评测入口签发 JWT、服务端认证身份及追踪参数保留，不运行真实质量评测。

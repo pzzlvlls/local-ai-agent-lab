@@ -1,6 +1,6 @@
 import json
 
-from deepagents import DeepAgentState
+from langchain.agents import AgentState
 from langchain.agents.middleware import Runtime, before_agent
 from langchain.messages import AnyMessage, HumanMessage
 from deal_pilot.rag.retriever.feishu_doc.feishu_doc_retriever import search
@@ -21,7 +21,7 @@ def _validate_last_msg(query_msg: AnyMessage):
 
 
 @before_agent
-async def retrieve_context(state: DeepAgentState, runtime: Runtime):
+async def retrieve_context(state: AgentState, runtime: Runtime):
     msgs = state["messages"]
     if not msgs:
         raise ValueError("检索需要非空的消息列表")

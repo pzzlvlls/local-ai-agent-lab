@@ -19,8 +19,10 @@
 | TavilySettings    | `TAVILY_`       |
 | FeishuSettings    | `FEISHU_`       |
 | MilvusSettings    | `MILVUS_`       |
+| AgentSettings     | `AGENT_`        |
 
 - Settings 实例在模块导入时创建；修改环境后不会自动重建已有实例。验证配置时先准备环境再导入。
+- Agent 连接使用 `AGENT_SERVER_URL`，默认 `http://127.0.0.1:80`；`AGENT_TOKEN_SECRET` 默认空，调用签发/验证时要求至少 32 字节的随机密钥，调用端和 Server 必须一致。`AGENT_TOKEN_TTL_SECONDS` 默认 300 秒且必须大于零，只控制身份令牌期限，与 `langgraph.json` 的检查点 TTL 无关。导入不连接服务或签发令牌。
 - `.env` 路径相对于运行目录，命令应从项目根目录执行。
 - `NacosSettings.server_address` 移除末尾斜线；MinIO endpoint 不含协议，TLS 由 `secure` 控制，API 地址与控制台地址不能混用。
 - MinIO 宿主地址用于客户端和交付 URL；`endpoint_in_sandbox` 用于沙箱内直传，两者不要求相同。

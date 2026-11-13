@@ -13,15 +13,15 @@
 
 ## 项目定位与当前边界
 
-- 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，以 Deep Agents 组装 Agent，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
+- 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，主 Agent 使用 Deep Agents，检索 Agent 使用 LangChain create_agent 组装，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
 - Langfuse 用于追踪、离线评测和 Webhook；OpenSandbox 提供用户执行环境；MinIO 用于产物存储与交付；模型通过 OpenAI 兼容接口及自定义模型适配层调用。
 - 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；`rag/store/feishu_doc` 提供 Milvus 初始化与缓存的 LangChain Milvus 对象，支持文档向量化写入和稠密/BM25 混合检索。`graphs/feishu_doc_index` 已编排目录分批、版本比较、构树、加载、切片、写入和旧版本清理，并注册为独立服务图；运行时显式调用，不在服务启动时自动入库，索引流程尚未接入 Agent。图片识图仍为占位，流程限制与验证边界见图模块指令。
-- `retrieve_agent` 已注册为独立 Agent 服务入口：`retrieve_context` 在 Agent 执行前，读取 Nacos `rag_config.retriever`，以最后一条普通用户消息和该配置调用飞书检索器，将结果作为命名消息追加给模型。工厂使用 `ToolStrategy(RetrieveResponse)`，成功生成的结构化结果位于状态的 `structured_response`，包含 `status`、Markdown `answer`、`sources` 和 `gaps`。系统提示词仍由 Nacos 提供，第 34、35、36 节课件分别提供检索生成、图片展示和格式化输出提示词示例，不会自动加载。内置注册表已加入 `get_bucket_file_url`，可生成默认 1 小时的 MinIO GET 预签名链接；Agent 使用该工具仍需在远程 AgentSpec 中配置，不能据本地注册推断远程已启用。当前检索 Agent 未注册为主 Agent 的子 Agent；检索回答的质量回归入口见 `benchmarks`，图片展示仍无专门链路测试，本轮未进行真实服务联调。
+- `retrieve_agent` 已注册为独立 Agent 服务入口：`retrieve_context` 在 Agent 执行前，读取 Nacos `rag_config.retriever`，以最后一条普通用户消息和该配置调用飞书检索器，将结果作为命名消息追加给模型。检索工厂直接调用 LangChain `create_agent`，保留 `ToolStrategy(RetrieveResponse)`，不组装 Skill、子 Agent 或沙箱后端，配置读取也跳过 Skill 同步。成功生成的结构化结果位于状态的 `structured_response`，包含 `status`、Markdown `answer`、`sources` 和 `gaps`。系统提示词仍由 Nacos 提供，第 34、35、36 节课件分别提供检索生成、图片展示和格式化输出提示词示例，不会自动加载。内置注册表已加入 `get_bucket_file_url`，可生成默认 1 小时的 MinIO GET 预签名链接；Agent 使用该工具仍需在远程 AgentSpec 中配置，不能据本地注册推断远程已启用。当前子 Agent 注册表仅包含 `retrieve_agent`，是否启用由主 Agent 的远程 AgentSpec 决定；检索回答的质量回归入口见 `benchmarks`，图片展示仍无专门链路测试，本轮未进行真实服务联调。
 - 内置工具注册表已加入 `milvus_search` 和 `milvus_query`，分别复用 Nacos 检索配置执行混合检索、通过异步 Milvus 客户端按标量条件补查切片；工具契约见 `src/deal_pilot/tools/AGENTS.md`。第 38 节课件提供自主检索与结构补查提示词，仍以现有中间件的首轮材料为起点；使用工具需配置远程 AgentSpec，不据本地注册推断已启用。工具未实现用户级知识空间授权，首次调用可能触发存储初始化；本轮未做真实服务验证。
 - `benchmarks` 按 Langfuse 数据集名称选择评测配置，当前仅注册 `retrieve`，评测其结构化回答的来源精准率、来源召回率、回答正确性和完整性；LLM 评分 Prompt 优先读取 Nacos，空 Prompt 使用内置模板。回归报告逐项读取 `Evaluation.metadata.test.threshold` 判定，不再使用固定的总体相似度；评分口径与验证边界见 `src/deal_pilot/benchmarks/AGENTS.md` 和 `src/deal_pilot/benchmarks/evaluators/AGENTS.md`。第 37 节课件说明质量评估方法，`resource/评测数据集` 提供 CSV，不会自动导入 Langfuse。
 - 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。存储初始化使用 PyMilvus，`get_store()` 使用 `langchain-milvus` 连接该服务；其锁定版本 0.4.0 在非 Windows 平台传递引入 `milvus-lite`，当前运行仍使用 Standalone，不使用本地 Lite 数据库。
-- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用、图片下载、用户/群文本消息发送与撤回，以及 CardAPI/Card 卡片创建、投递和更新；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具。`feishu/event` 提供子进程 WebSocket 监听与主进程回调分发，`event` 负责业务回调注册，`event/message` 处理消息并演示流式卡片；FastAPI lifespan 已接入启动与关闭，启动不等待远程连接就绪，缺少飞书凭据会导致启动失败。当前回调解析收到的文本后，向发送者单聊发送固定内容的流式卡片，尚未使用收到的文本生成回答，也未注册卡片交互业务回调；未接入 Agent、索引或用户身份映射。消息发送、卡片、事件监听及生命周期暂无专门测试，本轮未做真实租户验证。第 39 节课件提供消息监听与发送示例，第 40 节介绍卡片创建、流式更新和收尾。
-- 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
+- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用、图片下载、用户/群文本消息发送与撤回，以及 CardAPI/Card 卡片创建、投递和更新；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具。`feishu/event` 提供子进程 WebSocket 监听与主进程回调分发，`event` 负责业务回调注册，`event/message` 处理消息并调用 main_agent 流式更新卡片；FastAPI lifespan 已接入启动与关闭，启动不等待远程连接就绪，缺少飞书凭据会导致启动失败。当前回调将收到的文本交给 main_agent，可信长连接事件的发送者 open_id 作为 user_id，由 run_agent 签发 JWT、复用线程并排队；向发送者单聊展示状态和单次模型生成的累计正文；独立读取模型流，每隔约 200 毫秒合并刷新最新快照，正常结束前补发最终内容。尚未注册卡片交互业务回调或接入索引，不建立额外用户映射表。reply 编排有 Mock 测试，底层消息/卡片 API、事件监听及生命周期暂无专门测试，本轮未做真实租户或 Server 联调。第 39 节课件提供消息监听与发送示例，第 40 节介绍卡片创建、流式更新和收尾。
+- `utils/run_agent.py` 提供 SDK 异步生成器：将可信业务入口的 user_id 签为短期 JWT，按用户和 Agent 复用固定线程并在 Server 排队执行，统一父、子 Agent 事件，返回共享 `AgentStatus` 与单次模型生成累计的 Markdown 快照（不跨生成拼接）；子 Agent 正文超过 200 字符时仅展示前 200 字符加省略号，主 Agent 不截断；已由飞书回复模块调用。`security` 验证 JWT 取得身份，仅保留身份验证和 owner/namespace 资源隔离，不再配置或判断操作权限；已移除模拟 token 和模拟权限查询，评测入口也改为签发 JWT；未接入生产用户中心。配置使用 `AGENT_SERVER_URL`、`AGENT_TOKEN_SECRET`、`AGENT_TOKEN_TTL_SECONDS`，详见 config/security/utils 指令。本地 SDK Mock、令牌及事件适配测试不代表真实 Server 联调。告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
 - `graphs` 保存手工构建的普通 LangGraph 图，不存放通过 LangChain 或 Deep Agents 创建的 Agent 图；当前包含清理图和飞书文档索引图。调度计划由外部服务管理，代码中没有自动注册定时计划的逻辑。
 
 ## 架构与目录导航
@@ -31,7 +31,7 @@
 | `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装及独立检索 Agent                                                                                                                    |
 | `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook、飞书监听生命周期接入                                                                                                                  |
 | `src/deal_pilot/event`                    | 飞书业务事件回调注册、监听启停；消息处理委托给 message 子目录                                                                                                               |
-| `src/deal_pilot/event/message`            | 接收消息解析、卡片结构和固定内容流式回复示例                                                                                                                                |
+| `src/deal_pilot/event/message`            | 接收消息解析、Agent 调用、卡片状态和正文流式回复                                                                                                                            |
 | `src/deal_pilot/config`                   | 环境配置；`nacos` 子目录负责远程资源读取与同步                                                                                                                              |
 | `src/deal_pilot/security`                 | LangGraph 身份认证与资源授权                                                                                                                                                |
 | `src/deal_pilot/backends`                 | Deep Agents 后端到 OpenSandbox 的适配                                                                                                                                       |
@@ -56,6 +56,8 @@
 | `docker/sandbox/Dockerfile`               | 沙箱镜像，包含部署所需的上传工具                                                                                                                                            |
 
 运行入口由 `langgraph.json` 定义：`main_agent` 指向追踪包装后的主 Agent 工厂，`retrieve_agent` 指向 `deal_pilot.agents.retrieve_agent:factory_with_trace`，`delete_old_trace` 指向清理图，`feishu_doc_index` 指向 `deal_pilot.graphs.feishu_doc_index.graph:factory_with_trace`；鉴权入口是 `security.auth:auth`，自定义 HTTP 应用是 `app.main:app`。调整导出名称或模块路径时同步检查该文件。
+
+- 检查点保留决策：目标是支持长期会话并减少历史快照占用；选定方案是在 `langgraph.json` 全局配置 `checkpointer.ttl`，使用 `keep_latest`、`default_ttl=60` 分钟、`sweep_interval_minutes=5` 分钟，暂不在业务代码中手动清理。原因是当前不需要时间旅行，保留线程及继续运行所需的最新状态即可。实现状态：已配置并完成本地配置检查，未重启服务或验证实际清理。`keep_latest` 的到期窗口会在运行结束或线程状态更新后刷新，到期后由后台扫描清理，不是固定每小时执行一次，也不负责裁剪最新状态中的消息。当前安装的 in-memory runtime 未实现线程 TTL 扫描，且拒绝 `keep_latest` 手动清理；Deep Agents 的消息状态使用 `DeltaChannel`，实际部署后端对增量恢复链的保留能力仍需验证，配置校验通过不能证明清理已生效。
 
 ## 环境与常用命令
 

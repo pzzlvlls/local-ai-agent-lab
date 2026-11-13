@@ -3,6 +3,7 @@
 ## 职责与入口
 
 - `shared.py:EvalConfig` 组合 `task`、`evaluators` 和可选的 `composite_evaluator`；`run_agent(agent_name, input)` 调用指定 Agent 并返回完整状态，服务地址、认证和追踪契约见上级指令。
+- Agent 调用前使用 `BENCHMARK_USER_ID` 签发短期 JWT；不再发送明文身份 token。`tests/units/test_agent_token.py` 使用 Mock HTTP 验证此请求与追踪字段，评分口径保持不变。
 - `shared.py:create_llm_score_evaluator` 创建 `correctness` 或 `completeness` 异步评分器；`AnswerEvaluation` 约束 0–1 数值 `score` 和非空 `reason`。
 - 工厂在返回前将函数 `__name__` 设为 `<name>_eval`，使 Langfuse 实验追踪节点分别显示 `correctness_eval`、`completeness_eval`；`retrieve.py` 使用同名变量注册。返回的 `Evaluation.name` 仍为 `correctness`、`completeness`，评分指标名和阈值不变；命名仅影响修改后运行的新追踪。
 - `retrieve.py:experiment_task` 调用 `retrieve_agent`，返回 `structured_response`；`retrieve_eval_config` 注册来源精准率、来源召回率、回答正确性和完整性，未设置组合评分。

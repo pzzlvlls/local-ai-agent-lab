@@ -23,7 +23,7 @@
 
 - 令牌通过进程内异步锁避免重复登录，使用单调时间并提前 30 秒到期；这不是跨进程锁。
 - 配置、AgentSpec、Prompt 和 MCP 使用 `func_cache(ttl=nacos_settings.ttl, lazy=True)`：过期有旧值时先返回旧值再后台刷新，刷新失败保留旧值。
-- `get_agent_spec` 会调用 `save_skills`，并非纯读操作。Skill 同步会先清理 `/shared/skills/{agent_name}`，再下载、解压到该目录；压缩包放在 `/shared/skill_zips/{agent_name}`。
+- `get_agent_spec` 默认 `sync_skills=True`，会调用 `save_skills`，并非纯读操作。显式传入 `sync_skills=False` 时只读取配置，不访问共享沙箱或同步 Skill；检索工厂及父工厂读取子 Agent 描述时使用此选项，缓存按该参数区分。Skill 同步会先清理 `/shared/skills/{agent_name}`，再下载、解压到该目录；压缩包放在 `/shared/skill_zips/{agent_name}`。
 - 只有共享维护沙箱可写共享卷。改 Skill 同步时检查并发刷新、路径引用和命令转义，不将清理范围扩大到其他 Agent 目录。
 - 当前代码尚未提供 Skill 同步的原子替换或完整压缩包安全校验保证；不能把这些能力写成既有实现。
 

@@ -11,7 +11,8 @@ import httpx
 
 
 @func_cache(ttl=nacos_settings.ttl, lazy=True)
-async def get_agent_spec(agent_name: str) -> AgentSpec:
+async def get_agent_spec(agent_name: str, *, sync_skills: bool = True) -> AgentSpec:
+    """读取 Agent 配置；不使用 Skill 的调用方可关闭共享卷同步。"""
     access_token = await get_access_token()
     async with httpx.AsyncClient(
         base_url=nacos_settings.server_address, headers={"accessToken": access_token}
@@ -44,8 +45,9 @@ async def get_agent_spec(agent_name: str) -> AgentSpec:
     link_prompts = config.get("link_prompts", [])
     prompt = await get_prompts(link_prompts)
     config["system_prompt"] = system_prompt + "\n\n" + prompt
-    skills = config.get("skills", [])
-    await save_skills(agent_name, skills)
+    if sync_skills:
+        skills = config.get("skills", [])
+        await save_skills(agent_name, skills)
     return AgentSpec.model_validate(config)
 
 
@@ -55,12 +57,12 @@ if __name__ == "__main__":
         await get_agent_spec("main_agent")
         await get_agent_spec("main_agent")
         await get_agent_spec("main_agent")
-        await get_agent_spec("web_agent")
-        await get_agent_spec("web_agent")
-        await get_agent_spec("web_agent")
+        await get_agent_spec("retrieve_agent")
+        await get_agent_spec("retrieve_agent")
+        await get_agent_spec("retrieve_agent")
         await asyncio.sleep(5)
         await get_agent_spec("main_agent")
-        await get_agent_spec("web_agent")
+        await get_agent_spec("retrieve_agent")
         await asyncio.sleep(5)
 
     asyncio.run(main())

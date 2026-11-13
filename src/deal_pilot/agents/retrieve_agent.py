@@ -1,13 +1,15 @@
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from langchain.agents import AgentState
+from langchain.agents import AgentState, create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
 from deal_pilot.utils.trace_wrapper import trace_wrapper
 from deal_pilot.agents.agent_factory import AgentFactory
+from deal_pilot.config.nacos.nacos_agent_spec import get_agent_spec
 from deal_pilot.middlewares.retrieve_context import retrieve_context
 
 
@@ -53,6 +55,18 @@ class RetrieveAgentFactory(AgentFactory):
     @property
     def name(self) -> str:
         return "retrieve_agent"
+
+    async def factory(self) -> Runnable:
+        """复用模型和工具加载，使用 LangChain 创建普通检索 Agent。"""
+        agent_config = await get_agent_spec(self.name, sync_skills=False)
+        self.agent_config = agent_config
+        return create_agent(
+            model=self._get_model(),
+            tools=await self._get_tools(),
+            system_prompt=agent_config.system_prompt,
+            middleware=self.get_middlewares(),
+            response_format=self.get_response_format(),
+        )
 
     def get_middlewares(self) -> Sequence[AgentMiddleware[AgentState[Any], None, Any]]:
         return [retrieve_context]

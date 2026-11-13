@@ -11,6 +11,13 @@
     "retrieve_agent": "deal_pilot.agents.retrieve_agent:factory_with_trace"
   },
   "env": ".env",
+  "checkpointer": {
+    "ttl": {
+      "strategy": "keep_latest",
+      "default_ttl": 60,
+      "sweep_interval_minutes": 5
+    }
+  },
   "auth": {
     "path": "deal_pilot.security.auth:auth",
     "disable_studio_auth": true

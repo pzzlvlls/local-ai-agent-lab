@@ -24,7 +24,9 @@ from importlib import import_module
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ResponseFormat
 
-_AGENT_FACTORIES = {"web_agent": "deal_pilot.agents.web"}
+_AGENT_FACTORIES = {
+    "retrieve_agent": "deal_pilot.agents.retrieve_agent",
+}
 
 
 class AgentFactory(ABC):
@@ -83,7 +85,10 @@ class AgentFactory(ABC):
         if not self.agent_config:
             return []
         specs = await asyncio.gather(
-            *[get_agent_spec(agent_name) for agent_name in self.agent_config.subagents]
+            *[
+                get_agent_spec(agent_name, sync_skills=False)
+                for agent_name in self.agent_config.subagents
+            ]
         )
 
         subagents = []

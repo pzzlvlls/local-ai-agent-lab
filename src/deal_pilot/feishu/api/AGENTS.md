@@ -41,7 +41,7 @@
   避免官方模型丢失未知字段。根块空 parent_id 规范化为 None，缺少 children 时使用空列表。
 - ID/token 只接受单个资源标识，不解析链接或路径；传给请求 Builder 时保留原值，路径编码由 SDK 处理。
 - `await ImageAPI().download_image(token)` 接收图片块的 `image.token`，请求 Drive `medias/{file_token}/download`，
-  不使用 IM 消息图片接口。MIME 取响应 Content-Type，去参数并转小写；缺失或非 image/* 时抛 FeishuResponseError。
+  不使用 IM 消息图片接口。MIME 取响应 Content-Type，去参数并转小写；缺失或非 image/\* 时抛 FeishuResponseError。
   返回原始 bytes，不生成 URL、Base64 或落盘。JSON 错误响应仍校验业务 code，包括 HTTP 200；非 JSON HTTP 错误抛 FeishuHTTPError。
 
 ## SDK 与并发边界
@@ -58,7 +58,7 @@
 
 - 目标：向用户或群发送文本或卡片消息。选定方案：`MessageAPI.send_text` / `Card.create(..., receive_id=...)`，复用官方 IM V1
   `message.create`、已有客户端和错误边界。原因：沿用 SDK 鉴权与请求序列化，不增加依赖。
-  实现状态：已实现，`deal_pilot/event/message/reply.py` 调用 Card.create 创建并发送固定内容流式卡片；当前没有消息发送或卡片专门测试，未做真实发送验证，未注册为 Agent 工具。
+  实现状态：已实现，`deal_pilot/event/message/reply.py` 调用 Card.create 创建并发送 Agent 回复卡片；reply 编排有 Mock 测试，当前没有底层消息发送或卡片 API 专门测试，未做真实发送验证，未注册为 Agent 工具。
 - `await MessageAPI().send_text(receive_id, text, *, receive_id_type="open_id", uuid=None)`
   返回非空 `message_id: str`；支持 open_id、union_id、user_id、email 和 chat_id。
   receive_id 必须是非空且不含空白的字符串，标识的真实性和类型匹配由服务端校验。
@@ -83,7 +83,7 @@
 - CardAPI 的卡片消息方法包括：send_card、reply_card、update_card、recall、delayed_update_card、send_ephemeral_card、delete_ephemeral_card。MessageAPI 保留 send_text/recall；卡片投递及更新链不依赖它。历史三个接口使用官方 Client.request，其余使用生成式 SDK。
 - 延时更新接收交互 token，必须在回执已经交付后调用；不自行 sleep 或调度任务。当前业务注册表只注册消息接收事件，未接入卡片交互处理；不能仅凭此 API 推断交互回执已交付。临时卡片和 JSON 2.0 的 update_multi 是不同能力。
 - CardKit 权限为 cardkit:card:write；发送、回复、更新、撤回等消息权限按官方接口和应用后台配置。没有自动授权、用户级资源过滤、HTTP Webhook、持久业务队列或去重保证。
-- 当前没有卡片 API、Card 对象、消息发送、流式业务回调或交互回执专门测试；不能声称并发、取消、组件 JSON 或远端交互已验证。
+- 当前没有卡片 API、Card 对象、消息发送或交互回执专门测试；tests/units/test_message_reply.py 只 Mock Card 验证业务编排，不能据此声称底层并发、取消、组件 JSON 或远端交互已验证。
 
 ## Card 对象契约
 
