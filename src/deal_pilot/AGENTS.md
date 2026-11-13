@@ -11,7 +11,7 @@
 - 工厂读取 `config/nacos` 的 AgentSpec，组装模型、内置工具、MCP、子 Agent 和 Skill，交给 Deep Agents 创建运行图。
 - 工具和后端从 `utils/shared.py` 获取认证用户与会话；`backends/sandbox_backend.py` 通过 `utils/sandbox.py` 连接或创建执行环境。
 - `app` 接收 Langfuse Webhook；实验入口调用 `benchmarks`，按数据集名称选择 `EvalConfig`。当前 `retrieve` 任务显式调用 `retrieve_agent`，读取 `structured_response`，由 `benchmarks/evaluators` 对来源和回答评分。
-- `app/main.py:lifespan` → `event/listener.py:start_feishu_events` → `feishu/event` 单例监听器；注册 `im.message.receive_v1` 后启动监听，事件交给 `event/message_handler.py`，通过 `MessageAPI.send_text` 向发送者回显文本。退出时在线程中调用 `cancel_feishu_events` 关闭监听，不等待已有业务回调完成。
+- `app/main.py:lifespan` → `event/listener.py:start_feishu_events` → `feishu/event` 单例监听器；注册 `im.message.receive_v1` 后启动监听，事件交给 `event/message/message_handler.py` 解析，再由 `event/message/reply.py` 通过 `Card.create`、`stream_text` 和 `finish` 向发送者单聊演示固定内容的流式卡片。退出时在线程中调用 `cancel_feishu_events` 关闭监听，不等待已有业务回调完成。
 - `graphs` 保存手工构建的普通 LangGraph 图；清理图调用 `utils/cleanup_expired_traces.py`，`feishu_doc_index` 通过追踪包装工厂注册为独立服务入口，分批调用单文档索引子图。
 
 ## 模块分工
@@ -21,8 +21,8 @@
 - `config` 负责配置模型及获取，`security` 负责身份和授权；工具参数不能成为认证依据。
 - `backends` 负责 Deep Agents 协议适配，公共沙箱连接逻辑放 `utils/sandbox.py`。
 - `benchmarks` 负责数据集读取和实验编排；`evaluators` 保存任务配置、Agent 调用、来源指标公式及 LLM 回答评分模型与 Prompt 默认模板，HTTP 处理放 `app`。逐项阈值判定与报告由 `tests/benchmarks/test_benchmark.py` 完成，Langfuse 实验入口本身不判定回归是否达标。
-- `feishu/api` 通过官方 lark-oapi SDK、以应用身份读取知识库、Docx、下载文档图片和发送用户文本消息；完整同步 SDK 调用通过 asyncio.to_thread 隔离，直接复用 `config/feishu_settings.py`；WikiAPI 和 DocxAPI 已由索引图调用，MessageAPI 已由事件回调调用，API 本身不承担解析、索引或检索，尚未注册为 Agent 工具。
-- `feishu/event` 负责 SDK 长连接子进程、IPC 和回调提交；`event` 负责业务回调注册及处理，不把业务逻辑放入底层监听器。当前仅实现文本回显，未调用 Agent、建立飞书用户与认证用户的映射，也未接入索引。
+- `feishu/api` 通过官方 lark-oapi SDK、以应用身份读取知识库、Docx、下载文档图片、发送用户/群文本及撤回消息，并通过 CardAPI/Card 创建、投递和更新卡片；完整同步 SDK 调用通过 asyncio.to_thread 隔离，直接复用 `config/feishu_settings.py`；WikiAPI 和 DocxAPI 已由索引图调用，Card 已由消息业务回调调用，API 本身不承担解析、索引或检索，尚未注册为 Agent 工具。
+- `feishu/event` 负责 SDK 长连接子进程、IPC 和回调提交；`event` 负责业务回调注册及处理，不把业务逻辑放入底层监听器。消息业务拆分在 `event/message`，当前仅实现固定内容的流式卡片演示，收到的文本尚未用于生成回答；未注册卡片交互业务回调，未调用 Agent、建立飞书用户与认证用户的映射，也未接入索引。
 - `rag/structure/feishu_doc` 独立提供 `DocxBlock` 列表的原始关系校验和按标题层级构树；异步 `build_tree` 在完整树构建后按文档顺序串行调用图片处理占位函数，等待完成再返回；另有 Data URL、MinIO 私有图片上传及上下文提取辅助函数，尚未编排调用或接入模型识图。content 初始提取纯文本或图片 token，payload 保存代码语言或表格行列数、合并信息；BlockNode 的 to_dict/from_dict 供索引图传递无循环引用的树形状态，本目录不承担切片、索引或检索。
 - `rag/loader/feishu_doc` 将已有标准树提取为 LangChain Documents；页面、标题、图片、表格和代码分别成文档，父文档保留正文和子文档占位引用。仅本地转换，不读取飞书、不重新构树或按长度切片。
 - `rag/splitter/feishu_doc` 对 loader 结果进一步切片：图片/代码不拆，表格首行表头加单行，页面/章节复用 LangChain 递归切分并保护占位符。切片新增序号与总数，block_id、parent_block_id 等保留来源结构含义；不执行向量化或入库。

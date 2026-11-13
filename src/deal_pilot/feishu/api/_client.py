@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import lru_cache
 
 import lark_oapi as lark
+from lark_oapi.api.cardkit.v1.version import V1 as CardkitV1
 from lark_oapi.api.docx.v1.version import V1 as DocxV1
 from lark_oapi.api.drive.v1.version import V1 as DriveV1
 from lark_oapi.api.im.v1.version import V1 as ImV1
@@ -26,14 +27,8 @@ from deal_pilot.feishu.api.errors import (
 
 @lru_cache(maxsize=1)
 def _build_client(app_id: str, app_secret: str) -> lark.Client:
-    return (
-        lark.Client.builder()
-        .app_id(app_id)
-        .app_secret(app_secret)
-        .timeout(30)
-        .log_level(lark.LogLevel.ERROR)
-        .build()
-    )
+    return (lark.Client.builder().app_id(app_id).app_secret(app_secret)
+            .timeout(30).log_level(lark.LogLevel.ERROR).build())
 
 
 def _client() -> lark.Client:
@@ -67,6 +62,12 @@ def im_client() -> ImV1:
     return client.im.v1
 
 
+def cardkit_client() -> CardkitV1:
+    client = _client()
+    assert client.cardkit is not None
+    return client.cardkit.v1
+
+
 def resource_id(value: str, name: str) -> str:
     """校验单个资源标识；路径编码由 SDK 处理。"""
     if not isinstance(value, str) or not value or value.strip() != value:
@@ -94,9 +95,7 @@ async def sdk_response[T: BaseResponse](operation: Callable[[], T]) -> T:
     raw = response.raw
     if raw is None or type(raw.status_code) is not int:
         raise FeishuResponseError("飞书 SDK 响应缺少有效的 HTTP 状态")
-    log_id = next(
-        (v for k, v in raw.headers.items() if k.lower() == "x-tt-logid"), None
-    )
+    log_id = next((v for k, v in raw.headers.items() if k.lower() == "x-tt-logid"), None)
     if raw.status_code >= 500:
         raise FeishuHTTPError(raw.status_code, log_id)
     if type(response.code) is not int:

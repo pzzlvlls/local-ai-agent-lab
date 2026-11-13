@@ -1,5 +1,5 @@
 from deal_pilot.feishu.event import feishu_event_listener
-from deal_pilot.event.message_handler import message_handler
+from deal_pilot.event.message.message_handler import message_handler
 
 HANDLERS = {"im.message.receive_v1": message_handler}
 

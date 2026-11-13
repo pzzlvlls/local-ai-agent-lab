@@ -20,7 +20,7 @@
 - 内置工具注册表已加入 `milvus_search` 和 `milvus_query`，分别复用 Nacos 检索配置执行混合检索、通过异步 Milvus 客户端按标量条件补查切片；工具契约见 `src/deal_pilot/tools/AGENTS.md`。第 38 节课件提供自主检索与结构补查提示词，仍以现有中间件的首轮材料为起点；使用工具需配置远程 AgentSpec，不据本地注册推断已启用。工具未实现用户级知识空间授权，首次调用可能触发存储初始化；本轮未做真实服务验证。
 - `benchmarks` 按 Langfuse 数据集名称选择评测配置，当前仅注册 `retrieve`，评测其结构化回答的来源精准率、来源召回率、回答正确性和完整性；LLM 评分 Prompt 优先读取 Nacos，空 Prompt 使用内置模板。回归报告逐项读取 `Evaluation.metadata.test.threshold` 判定，不再使用固定的总体相似度；评分口径与验证边界见 `src/deal_pilot/benchmarks/AGENTS.md` 和 `src/deal_pilot/benchmarks/evaluators/AGENTS.md`。第 37 节课件说明质量评估方法，`resource/评测数据集` 提供 CSV，不会自动导入 Langfuse。
 - 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。存储初始化使用 PyMilvus，`get_store()` 使用 `langchain-milvus` 连接该服务；其锁定版本 0.4.0 在非 Windows 平台传递引入 `milvus-lite`，当前运行仍使用 Standalone，不使用本地 Lite 数据库。
-- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用、图片下载和用户文本消息发送；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具。`feishu/event` 提供子进程 WebSocket 监听与主进程回调分发，`event` 负责业务回调注册和文本回显；FastAPI lifespan 已接入启动与关闭，启动不等待远程连接就绪，缺少飞书凭据会导致启动失败。当前回调将收到的文本单聊发送给发送者，未接入 Agent、索引或用户身份映射；消息发送、事件监听及生命周期暂无专门测试，未做真实租户验证。第 39 节课件提供消息监听与发送示例。
+- `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用、图片下载、用户/群文本消息发送与撤回，以及 CardAPI/Card 卡片创建、投递和更新；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具。`feishu/event` 提供子进程 WebSocket 监听与主进程回调分发，`event` 负责业务回调注册，`event/message` 处理消息并演示流式卡片；FastAPI lifespan 已接入启动与关闭，启动不等待远程连接就绪，缺少飞书凭据会导致启动失败。当前回调解析收到的文本后，向发送者单聊发送固定内容的流式卡片，尚未使用收到的文本生成回答，也未注册卡片交互业务回调；未接入 Agent、索引或用户身份映射。消息发送、卡片、事件监听及生命周期暂无专门测试，本轮未做真实租户验证。第 39 节课件提供消息监听与发送示例，第 40 节介绍卡片创建、流式更新和收尾。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
 - `graphs` 保存手工构建的普通 LangGraph 图，不存放通过 LangChain 或 Deep Agents 创建的 Agent 图；当前包含清理图和飞书文档索引图。调度计划由外部服务管理，代码中没有自动注册定时计划的逻辑。
 
@@ -30,7 +30,8 @@
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/deal_pilot/agents`                   | Agent 工厂、主 Agent 状态、子 Agent 组装及独立检索 Agent                                                                                                                    |
 | `src/deal_pilot/app`                      | FastAPI 自定义路由、Langfuse Webhook、飞书监听生命周期接入                                                                                                                  |
-| `src/deal_pilot/event`                    | 飞书业务事件回调注册、监听启停与文本回显                                                                                                                                    |
+| `src/deal_pilot/event`                    | 飞书业务事件回调注册、监听启停；消息处理委托给 message 子目录                                                                                                               |
+| `src/deal_pilot/event/message`            | 接收消息解析、卡片结构和固定内容流式回复示例                                                                                                                                |
 | `src/deal_pilot/config`                   | 环境配置；`nacos` 子目录负责远程资源读取与同步                                                                                                                              |
 | `src/deal_pilot/security`                 | LangGraph 身份认证与资源授权                                                                                                                                                |
 | `src/deal_pilot/backends`                 | Deep Agents 后端到 OpenSandbox 的适配                                                                                                                                       |
@@ -40,12 +41,13 @@
 | `src/deal_pilot/benchmarks`               | 数据集与按名称选择的实验配置；`evaluators` 子目录负责 Agent 任务、来源指标及 LLM 回答评分                                                                                   |
 | `src/deal_pilot/graphs`                   | 手工构建的普通 LangGraph 图及其入口                                                                                                                                         |
 | `src/deal_pilot/graphs/feishu_doc_index`  | 飞书目录分批扇出与统计；单文档子图负责版本比较、解析切片、Milvus 写入和旧版本实体清理                                                                                       |
-| `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、图片下载、用户文本发送与长连接事件监听；Token 由 SDK 管理                                                                           |
+| `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、图片下载、用户/群文本及卡片操作与长连接事件监听；Token 由 SDK 管理                                                                  |
 | `src/deal_pilot/rag/structure/feishu_doc` | 异步构树、原始关系校验、标题归组、内容及元数据提取、树形字典导出与还原；完整树构建后串行调用图片处理占位函数；提供 Data URL、私有图片上传及上下文辅助函数，尚未接入模型识图 |
 | `src/deal_pilot/rag/loader/feishu_doc`    | 标准树到 LangChain Documents 的本地结构提取；父子占位引用、Markdown 正文、HTML 表格与合并校验，不按长度切片                                                                 |
 | `src/deal_pilot/rag/splitter/feishu_doc`  | 结构 Documents 的本地进一步切片；图片/代码整体保留，表格首行表头加单行，页面/章节按段落、句子和长度切分，保护占位符并保留目标 overlap                                       |
 | `src/deal_pilot/rag/store/feishu_doc`     | Milvus Schema 安全原地同步、数据库/集合初始化、稠密索引重建及历史知识库标题回填；缓存返回支持文档写入和稠密/BM25 混合检索的 LangChain Milvus 对象                           |
 | `src/deal_pilot/rag/retriever/feishu_doc` | 基于缓存存储对象进行异步混合检索、重排及分数过滤，返回 Document 与 score；由检索中间件和 `milvus_search` 工具调用                                                           |
+| `课件`                                    | Markdown 与 Notebook 教学材料及 assets 配图；示例与实际运行入口分开维护                                                                                                     |
 | `resource/feishu_doc_index`               | 索引流水线教学骨架；主图节点为省略号、子图业务节点为占位，不是独立运行实现                                                                                                  |
 | `resource/评测数据集`                     | 企业知识库基础问答和多轮命中 CSV；含问题、参考答案和相关文档标注，需单独导入远程数据集                                                                                      |
 | `tests/units`                             | 函数缓存、飞书 Mock、文档构树、Documents 结构提取、切片、Milvus Schema 预检、标题回填及 Benchmark 阈值报告单元测试                                                          |
@@ -104,8 +106,13 @@ Milvus SDK 端口为 `127.0.0.1:19530`，健康检查及 WebUI 为 `127.0.0.1:90
 
 ## AGENTS.md 的维护规则
 
+- **快捷指令“更新指令文件”**：用户发送这几个字，即明确授权执行本节的指令维护流程，无需再次确认。以当前工程 Git Diff 为依据检查改动，更新受影响的 `AGENTS.md`，并按下述新增规则补齐缺失的指令文件。
+- **检查改动**：先查看 `git status --short`、`git diff` 和 `git diff --cached`，覆盖未暂存与已暂存改动；同时读取未跟踪的新文件，避免 Git Diff 未显示它们而漏查。用户指定比较范围时按其范围执行，否则默认检查当前相对 HEAD 的未提交更改。
+- **定位与同步**：沿变更路径阅读各级 `AGENTS.md`，核对当前源码、调用方、配置和测试，判断哪些指令需要更新；新目录或缺失局部职责、契约与验证说明的目录按需创建 `AGENTS.md`。移动、删除和跨模块变更同步清理旧路径，并更新受影响的上下层指令；仍准确的文件不必改动。
+- **执行边界与交付**：该快捷指令授权修改或创建指令文件，不授权顺手修改业务代码、配置、课件正文或其他文档，也不授权运行有外部副作用的命令或提交代码。保留已有修改；完成后检查差异、路径和事实一致性，简要报告更新/新增的文件、验证范围及发现但未修改的问题。没有需要更新的内容时直接说明。
 - 维护范围包括根目录及各级子目录的 `AGENTS.md`。根目录记录项目全局事实和共同规则，子目录记录本目录的职责、实际行为与局部约束；避免重复上层内容，不将其他目录的实现写成本目录的能力。
 - **何时新增**：在用户授权的开发中新增源码目录或独立业务模块时，同步新增对应的 `AGENTS.md`；已有目录缺少指令且需要明确职责、关键契约或局部验证方式时，在授权范围内补齐。不为缓存、构建产物、虚拟环境等生成目录创建指令文件。
+- **课件目录例外**：`课件` 目录不创建 `AGENTS.md`；不因新增或修改课件而补建指令文件，也不在指令文件中逐节记录课件内容。目录导航只需简要说明这里保存课件。
 - **何时修改**：目录职责、调用流程、入口或导出、接口与数据结构、配置项与默认值、资源路径、权限边界、错误语义、依赖要求、测试命令或覆盖范围发生变化时，在同一轮已授权修改中更新受影响的指令文件。功能完成、移除或替换后，同步更新实现状态，删除失效描述。
 - **目录移动或删除**：移动模块时同步调整指令的适用范围、路径和上下层引用；删除模块时移除其指令，并清理根目录导航及其他指令中的失效引用。
 - **以当前事实为依据**：编写和更新前核对本目录源码、配置、入口和测试；命令以实际定义为准，外部行为以可核实的文档或真实验证为准。不得凭目录名、旧指令或计划推断能力已经实现。
