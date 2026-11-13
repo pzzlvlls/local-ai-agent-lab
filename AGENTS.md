@@ -16,7 +16,8 @@
 - 当前项目是 Python Agent 服务：以 LangGraph Server 提供运行入口，以 Deep Agents 组装 Agent，以 Nacos 管理 AgentSpec、Prompt、Skill、MCP 与沙箱配置。
 - Langfuse 用于追踪、离线评测和 Webhook；OpenSandbox 提供用户执行环境；MinIO 用于产物存储与交付；模型通过 OpenAI 兼容接口及自定义模型适配层调用。
 - 当前 RAG 模块提供飞书标准树构建、到 Documents 的本地结构提取及进一步切片；`rag/store/feishu_doc` 提供 Milvus 初始化与缓存的 LangChain Milvus 对象，支持文档向量化写入和稠密/BM25 混合检索。`graphs/feishu_doc_index` 已编排目录分批、版本比较、构树、加载、切片、写入和旧版本清理，并注册为独立服务图；运行时显式调用，不在服务启动时自动入库，索引流程尚未接入 Agent。图片识图仍为占位，流程限制与验证边界见图模块指令。
-- `retrieve_agent` 已注册为独立 Agent 服务入口：`retrieve_context` 在 Agent 执行前，读取 Nacos `rag_config.retriever`，以最后一条普通用户消息和该配置调用飞书检索器，将结果作为命名消息追加给模型。工厂使用 `ToolStrategy(RetrieveResponse)`，成功生成的结构化结果位于状态的 `structured_response`，包含 `status`、Markdown `answer`、`sources` 和 `gaps`。系统提示词仍由 Nacos 提供，第 34、35、36 节课件分别提供检索生成、图片展示和格式化输出提示词示例，不会自动加载。内置注册表已加入 `get_bucket_file_url`，可生成默认 1 小时的 MinIO GET 预签名链接；Agent 使用该工具仍需在远程 AgentSpec 中配置，不能据本地注册推断远程已启用。当前检索 Agent 未注册为主 Agent 的子 Agent，仓库没有检索生成、图片展示或结构化输出链路的专门测试，本轮未进行真实服务联调。
+- `retrieve_agent` 已注册为独立 Agent 服务入口：`retrieve_context` 在 Agent 执行前，读取 Nacos `rag_config.retriever`，以最后一条普通用户消息和该配置调用飞书检索器，将结果作为命名消息追加给模型。工厂使用 `ToolStrategy(RetrieveResponse)`，成功生成的结构化结果位于状态的 `structured_response`，包含 `status`、Markdown `answer`、`sources` 和 `gaps`。系统提示词仍由 Nacos 提供，第 34、35、36 节课件分别提供检索生成、图片展示和格式化输出提示词示例，不会自动加载。内置注册表已加入 `get_bucket_file_url`，可生成默认 1 小时的 MinIO GET 预签名链接；Agent 使用该工具仍需在远程 AgentSpec 中配置，不能据本地注册推断远程已启用。当前检索 Agent 未注册为主 Agent 的子 Agent；检索回答的质量回归入口见 `benchmarks`，图片展示仍无专门链路测试，本轮未进行真实服务联调。
+- `benchmarks` 按 Langfuse 数据集名称选择评测配置，当前仅注册 `retrieve`，评测其结构化回答的来源精准率、来源召回率、回答正确性和完整性；LLM 评分 Prompt 优先读取 Nacos，空 Prompt 使用内置模板。回归报告逐项读取 `Evaluation.metadata.test.threshold` 判定，不再使用固定的总体相似度；评分口径与验证边界见 `src/deal_pilot/benchmarks/AGENTS.md` 和 `src/deal_pilot/benchmarks/evaluators/AGENTS.md`。第 37 节课件说明质量评估方法，`resource/评测数据集` 提供 CSV，不会自动导入 Langfuse。
 - 本地 Compose 提供 Milvus Standalone `v3.0.2`，使用专用 `milvus-etcd`、`milvus-minio` 与三个 `milvus_standalone_*` 命名卷，不复用 Shared MinIO 或已有旧 Milvus 卷。存储初始化使用 PyMilvus，`get_store()` 使用 `langchain-milvus` 连接该服务；其锁定版本 0.4.0 在非 Windows 平台传递引入 `milvus-lite`，当前运行仍使用 Standalone，不使用本地 Lite 数据库。
 - `feishu/api` 通过官方 `lark-oapi` SDK 实现应用身份的知识库目录、Docx 只读调用与图片下载；索引图已调用 WikiAPI 和 DocxAPI，尚未接入 Agent 工具，本地 Mock 测试不代表真实租户验证。
 - 鉴权当前使用 `utils/mock_user.py` 中的模拟用户；告警 Webhook 已验签并接收事件，尚未实现短信或邮件通知。
@@ -34,7 +35,7 @@
 | `src/deal_pilot/tools`                    | 模型可调用的工具及注册表                                                                                                                                                    |
 | `src/deal_pilot/middlewares`              | 主 Agent 轮次摘要、检索 Agent 执行前的参考材料注入                                                                                                                          |
 | `src/deal_pilot/utils`                    | 模型、追踪、缓存、存储、沙箱等公共能力                                                                                                                                      |
-| `src/deal_pilot/benchmarks`               | 数据集与实验；`evaluators` 子目录负责评分                                                                                                                                   |
+| `src/deal_pilot/benchmarks`               | 数据集与按名称选择的实验配置；`evaluators` 子目录负责 Agent 任务、来源指标及 LLM 回答评分                                                                                   |
 | `src/deal_pilot/graphs`                   | 手工构建的普通 LangGraph 图及其入口                                                                                                                                         |
 | `src/deal_pilot/graphs/feishu_doc_index`  | 飞书目录分批扇出与统计；单文档子图负责版本比较、解析切片、Milvus 写入和旧版本实体清理                                                                                       |
 | `src/deal_pilot/feishu`                   | 官方 SDK 接入、知识空间/节点/Docx 读取、图片下载、分页与错误处理；Token 由 SDK 管理                                                                                         |
@@ -44,9 +45,10 @@
 | `src/deal_pilot/rag/store/feishu_doc`     | Milvus Schema 安全原地同步、数据库/集合初始化、稠密索引重建及历史知识库标题回填；缓存返回支持文档写入和稠密/BM25 混合检索的 LangChain Milvus 对象                           |
 | `src/deal_pilot/rag/retriever/feishu_doc` | 基于缓存存储对象进行异步混合检索、重排及分数过滤，返回 Document 与 score；由检索中间件调用                                                                                  |
 | `resource/feishu_doc_index`               | 索引流水线教学骨架；主图节点为省略号、子图业务节点为占位，不是独立运行实现                                                                                                  |
-| `tests/units`                             | 函数缓存、飞书 Mock、文档构树、Documents 结构提取、切片、Milvus Schema 预检与标题回填单元测试                                                                               |
+| `resource/评测数据集`                     | 企业知识库基础问答 CSV；含问题、参考答案和相关文档标注，需单独导入远程数据集                                                                                                |
+| `tests/units`                             | 函数缓存、飞书 Mock、文档构树、Documents 结构提取、切片、Milvus Schema 预检、标题回填及 Benchmark 阈值报告单元测试                                                          |
 | `tests/intergrations`                     | MinIO、Deploy 与 Milvus Schema 隔离集成测试，各自通过环境变量启用；保留现有目录拼写                                                                                         |
-| `tests/benchmarks`                        | 依赖真实 Agent 和 Langfuse 的质量回归                                                                                                                                       |
+| `tests/benchmarks`                        | 依赖真实 Agent、Langfuse、Nacos 和模型的质量回归；按每项评分返回的阈值生成报告                                                                                              |
 | `docker/sandbox/Dockerfile`               | 沙箱镜像，包含部署所需的上传工具                                                                                                                                            |
 
 运行入口由 `langgraph.json` 定义：`main_agent` 指向追踪包装后的主 Agent 工厂，`retrieve_agent` 指向 `deal_pilot.agents.retrieve_agent:factory_with_trace`，`delete_old_trace` 指向清理图，`feishu_doc_index` 指向 `deal_pilot.graphs.feishu_doc_index.graph:factory_with_trace`；鉴权入口是 `security.auth:auth`，自定义 HTTP 应用是 `app.main:app`。调整导出名称或模块路径时同步检查该文件。
@@ -62,13 +64,13 @@
 | `make debug`                                                                                                                       | 开发服务另开调试端口 5678                                                                                                    |
 | `docker compose up -d --wait milvus`                                                                                               | 仅启动 Milvus Standalone 及其专用 etcd、MinIO，并等待健康检查                                                                |
 | `make build TAG=<镜像标签>`                                                                                                        | 构建 Agent 服务镜像                                                                                                          |
-| `make test-units`                                                                                                                  | 本地缓存、飞书 Mock、构树、Documents 提取、切片、Schema 预检及标题回填单元测试，无需启动外部服务                             |
+| `make test-units`                                                                                                                  | 本地缓存、飞书 Mock、构树、Documents 提取、切片、Schema 预检、标题回填及 Benchmark 报告单元测试，无需启动外部服务            |
 | `MINIO_INTEGRATION=1 uv run pytest -q tests/intergrations/test_minio.py`                                                           | 仅验证真实 MinIO，使用随机测试桶                                                                                             |
 | `MINIO_INTEGRATION=1 DEPLOY_INTEGRATION=1 DEPLOY_SANDBOX_IMAGE=<已准备的镜像> uv run pytest -q tests/intergrations/test_deploy.py` | 真实 MinIO 与 OpenSandbox 部署验证                                                                                           |
 | `make test-integrations`                                                                                                           | 当前 Makefile 同时启用 MinIO 和 Deploy，并固定镜像为 `opensandbox-python-node:1.0`；Milvus 测试需另设 `MILVUS_INTEGRATION=1` |
 | `MILVUS_INTEGRATION=1 .venv/bin/pytest -q tests/intergrations/test_feishu_doc_schema.py`                                           | 真实 Milvus 随机隔离库的 Schema 同步、历史标题局部更新及检索验证；Nacos/飞书使用 Mock                                        |
-| `make test-benchmark DS=<数据集名称>`                                                                                              | 对指定真实数据集评测，会调用 Agent 和模型并记录实验                                                                          |
-| `make test-benchmark DS=all`                                                                                                       | 对全部数据集评测，注意调用量和费用                                                                                           |
+| `make test-benchmark DS=<数据集名称>`                                                                                              | 对已注册配置的真实数据集评测，当前为 `DS=retrieve`；会调用 Agent、Nacos 和模型并记录实验                                     |
+| `make test-benchmark DS=all`                                                                                                       | 遍历 Langfuse 全部数据集；遇到未注册配置的数据集会报错，注意调用量和费用                                                     |
 
 `make docker-recreate` 会强制重建 Compose 容器，不是普通测试的准备步骤。集成测试不会替你启动服务或构建镜像；详细测试契约见 `tests/intergrations/README.md`，若其命令说明与 Makefile 不一致，以实际 Makefile 和测试启用条件为准。
 

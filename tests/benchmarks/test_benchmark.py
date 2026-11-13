@@ -3,13 +3,12 @@
 import math
 import os
 from pathlib import Path
+from typing import TypeGuard
 
 import pytest
 from dotenv import load_dotenv
 
 
-SCORE_THRESHOLD = 0.8
-SCORE_NAME = "总体相似度"
 EXPERIMENT_NAME_PREFIX = "实验数据集:"
 
 
@@ -30,7 +29,9 @@ def test_benchmark_regression():
             for result in results
         ]
     else:
-        reports = [_summarize_benchmark_result(dataset_name, run_benchmark(dataset_name))]
+        reports = [
+            _summarize_benchmark_result(dataset_name, run_benchmark(dataset_name))
+        ]
 
     _print_report(reports)
     failed_datasets = [report["dataset"] for report in reports if not report["passed"]]
@@ -47,7 +48,8 @@ def _summarize_benchmark_result(dataset_name, result):
     from deal_pilot.benchmarks.dataset import get_items
 
     items = get_items(dataset_name)
-    scores = []
+    scores = {e.name: [] for row in result.item_results for e in row.evaluations}
+    thresholds = {name: set() for name in scores}
     passed_items = 0
     failed_cases = []
     completed_ids = set()
@@ -60,39 +62,61 @@ def _summarize_benchmark_result(dataset_name, result):
             failed_cases.append(f"{case_name}: Agent 没有输出")
             continue
 
-        matches = [e.value for e in row.evaluations if e.name == SCORE_NAME]
-        if len(matches) != 1:
-            failed_cases.append(f"{case_name}: {SCORE_NAME} 评分缺失或重复")
+        if not row.evaluations:
+            failed_cases.append(f"{case_name}: 没有评估评分")
             continue
 
-        score = matches[0]
-        if (
-            not isinstance(score, (int, float))
-            or isinstance(score, bool)
-            or not math.isfinite(score)
-            or not 0 <= score <= 1
-        ):
-            failed_cases.append(f"{case_name}: {SCORE_NAME} 评分无效 ({score!r})")
-            continue
+        case_passed = True
+        seen_names = set()
+        for evaluation in row.evaluations:
+            name = evaluation.name
+            if name in seen_names:
+                failed_cases.append(f"{case_name}: {name} 评分重复")
+                case_passed = False
+                continue
+            seen_names.add(name)
 
-        scores.append(score)
-        if score >= SCORE_THRESHOLD:
+            score = evaluation.value
+            if not _is_valid_score(score):
+                failed_cases.append(f"{case_name}: {name} 评分无效 ({score!r})")
+                case_passed = False
+                continue
+
+            test_config = (evaluation.metadata or {}).get("test")
+            threshold = (
+                test_config.get("threshold") if isinstance(test_config, dict) else None
+            )
+            if not _is_valid_score(threshold):
+                failed_cases.append(
+                    f"{case_name}: {name} 阈值缺失或无效 ({threshold!r})"
+                )
+                case_passed = False
+                continue
+
+            scores[name].append(score)
+            thresholds[name].add(threshold)
+            if score < threshold:
+                failed_cases.append(
+                    f"{case_name}: {name} {score:.3f} < 阈值 {threshold:.3f}"
+                )
+                case_passed = False
+
+        for name in sorted(scores.keys() - seen_names):
+            failed_cases.append(f"{case_name}: {name} 评分缺失")
+            case_passed = False
+
+        if case_passed:
             passed_items += 1
-        else:
-            failed_cases.append(f"{case_name}: {SCORE_NAME} {score:.3f}")
 
     for item in items:
         if item.id not in completed_ids:
             failed_cases.append(f"{_case_name(item, item.id)}: 实验未完成")
 
-    average = sum(scores) / len(scores) if scores else None
     passed = (
         bool(items)
         and len(result.item_results) == len(items)
-        and len(scores) == len(items)
         and passed_items == len(items)
-        and average is not None
-        and average >= SCORE_THRESHOLD
+        and not failed_cases
     )
     if not items:
         failed_cases.append("数据集没有测试用例")
@@ -101,11 +125,26 @@ def _summarize_benchmark_result(dataset_name, result):
         "dataset": dataset_name,
         "total": len(items),
         "passed_items": passed_items,
-        "average": average,
+        "metrics": {
+            name: {
+                "average": sum(values) / len(values) if values else None,
+                "thresholds": sorted(thresholds[name]),
+            }
+            for name, values in scores.items()
+        },
         "passed": passed,
         "failed_cases": failed_cases,
         "url": result.dataset_run_url,
     }
+
+
+def _is_valid_score(value: object) -> TypeGuard[int | float]:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and 0 <= value <= 1
+    )
 
 
 def _case_name(item, fallback):
@@ -120,21 +159,27 @@ def _case_name(item, fallback):
 
 
 def _print_report(reports):
-    print(f"\nBenchmark 汇总（{SCORE_NAME} 门槛：{SCORE_THRESHOLD:.3f}）")
+    print("\nBenchmark 汇总（各评分按 metadata.test.threshold 判定）")
     if not reports:
         print("没有可测试的数据集")
         return
 
     for report in reports:
-        average = report["average"]
-        average_text = f"{average:.3f}" if average is not None else "无有效评分"
         status = "达标" if report["passed"] else "未达标"
         failed_count = report["total"] - report["passed_items"]
         print(
-            f"- {report['dataset']}：{status}，平均分 {average_text}；"
+            f"- {report['dataset']}：{status}；"
             f"用例 {report['total']} 条，达标 {report['passed_items']} 条，"
             f"未达标 {failed_count} 条"
         )
+        for name, metric in report["metrics"].items():
+            average = metric["average"]
+            average_text = f"{average:.3f}" if average is not None else "无有效评分"
+            threshold_text = ", ".join(f"{t:.3f}" for t in metric["thresholds"])
+            print(
+                f"    {name}：平均分 {average_text}，"
+                f"阈值 {threshold_text or '无有效阈值'}"
+            )
         for case in report["failed_cases"]:
             print(f"    - {case}")
         if report["url"]:

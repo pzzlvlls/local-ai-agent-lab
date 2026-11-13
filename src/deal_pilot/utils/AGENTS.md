@@ -17,6 +17,7 @@
 
 ## 身份、模型与追踪
 
+- `get_thread_id` 在配置或 thread_id 缺失时返回 `None`；当前使用裸 `except`，读取配置发生任何异常也返回 `None`，并不只处理无 LangGraph 运行上下文的情况。默认模型创建可在离线评测中无会话运行，有效 thread_id 才会加入会话路由头；该降级不适用于认证用户读取。
 - `get_user_id` 读取 `configurable.langgraph_auth_user_id`，缺失抛异常；不要从模型输入或任意 metadata 推断认证身份。
 - 模型创建使用 `AgentModelConfig` 和自定义 provider `openai_reasoning`；有 thread_id 时设置 `x-litellm-session-id`，保持同一会话路由标识。
 - `utils/__init__.py` 导入 ReasoningChatModel 触发 provider 注册。这依赖 LangChain 的内部集成表，升级依赖时检查兼容性，不能无意移除导入。

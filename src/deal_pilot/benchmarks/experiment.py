@@ -2,40 +2,23 @@ from langfuse.api import DatasetItem
 from langfuse import get_client
 from deal_pilot.benchmarks.dataset import get_items
 from langgraph_sdk import get_client as get_agent_client
-from deal_pilot.benchmarks.evaluators.weighted_average import weighted_average_evaluator
+from deal_pilot.benchmarks.evaluators.shared import EvalConfig
 from deal_pilot.config.benchmark_settings import benchmark_settings
 from opentelemetry import trace
-from deal_pilot.benchmarks.evaluators.content_similarity import content_similarity
-from deal_pilot.benchmarks.evaluators.emotional_similarity import emotional_similarity
+from deal_pilot.benchmarks.evaluators.retrieve import retrieve_eval_config
 
 langfuse = get_client()
 
 
-async def experiment_task(*, item: DatasetItem, **kwargs):
-    trace_id = langfuse.get_current_trace_id()  # 获取traceid
-    parent_span_id = langfuse.get_current_observation_id()  # 获取当前的parent_span_id
-    span_attributes = getattr(trace.get_current_span(), "attributes", {})
-    env = span_attributes.get("langfuse.environment")
-    async with get_agent_client(
-        url=benchmark_settings.agent_server,
-        headers={"Authorization": f"Bearer {benchmark_settings.user_id}"},
-    ) as client:
-        result = await client.runs.wait(
-            thread_id=None,
-            assistant_id=benchmark_settings.graph_id,
-            input={"messages": [{"role": "user", "content": item.input}]},
-            metadata={
-                "trace_id": trace_id,
-                "parent_span_id": parent_span_id,
-                "trace_environment": env,
-            },
-        )
-    last_message = result.get("messages")[-1]  # type: ignore
-    return last_message["content"]
+_config: dict[str, EvalConfig] = {"retrieve": retrieve_eval_config}
 
 
 def run_experiment(name: str, dataset_name: str, description: str | None = ""):
     items = get_items(dataset_name)
+    config = _config.get(dataset_name, None)
+    if config is None:
+        raise RuntimeError(f"当前数据集{dataset_name}没有对应的评估配置")
+
     # 运行实验
     return langfuse.run_experiment(
         # 给实验取个名字
@@ -45,7 +28,7 @@ def run_experiment(name: str, dataset_name: str, description: str | None = ""):
         description=description,
         # 此次实验针对哪些数据项
         data=items,
-        evaluators=[content_similarity, emotional_similarity],
-        composite_evaluator=weighted_average_evaluator,
-        task=experiment_task,  # type: ignore
+        evaluators=config.evaluators,
+        composite_evaluator=config.composite_evaluator,
+        task=config.task,  # type: ignore
     )

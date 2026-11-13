@@ -12,6 +12,7 @@
 - 必须先使用对应的 Langfuse Webhook secret 验证原始请求体，再解析或启动任务；签名无效返回 401，不执行后续动作。
 - 告警与实验使用不同密钥。验签逻辑集中在 `utils/langfuse_signature.py`，不要在路由中复制另一套算法。
 - 实验读取 `datasetName`，后台任务提交成功后返回 202；这不表示实验已完成或评分已达标。
+- 后台实验按 `benchmarks/experiment.py` 的注册表选择配置，当前仅支持 `retrieve`；未注册的数据集会在后台执行时报错，路由没有提前校验配置。Webhook 只调用实验入口，不执行 `tests/benchmarks/test_benchmark.py` 的逐项阈值回归判定。
 - 告警当前验签、读取事件后返回 200，通知逻辑尚未实现。修改说明不能声称已接通 SMS 或邮件。
 - BackgroundTasks 是当前进程内任务机制，没有持久队列、去重或失败自动重试的保证。
 
