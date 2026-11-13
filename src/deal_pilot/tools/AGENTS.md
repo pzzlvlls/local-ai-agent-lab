@@ -12,6 +12,15 @@
 - `ask_user_question` 使用 LangGraph interrupt 暂停，返回恢复时的答案；问题为 2–5 个选项，标题唯一，最多一个推荐项。不要在可重放的 interrupt 前加入不可重复的外部副作用。
 - `get_current_time` 当前返回宿主机本地时区的 ISO 时间，虽然工具描述称北京时间，实现未固定 `Asia/Shanghai`；修改时间语义时同时更新描述与测试。
 
+## Milvus 检索与查询契约
+
+- `milvus.py` 提供已加入内置注册表的 `milvus_search`、`milvus_query`；实际 Agent 使用仍需远程 AgentSpec 配置工具名称。第 38 节课件提供自主检索和结构补查提示词，不自动修改远程配置；当前 `retrieve_agent` 仍保留首轮检索中间件。
+- `milvus_search(question, filter=None)` 异步读取 Nacos `rag_config.retriever` 并传给飞书检索器，返回 `[{doc, score}]`；`doc` 为 Document 的 JSON 字典，包含 `page_content` 与 `metadata`。候选数、返回数、检索参数与融合/重排方式由配置控制，分数不是统一的置信概率。
+- `milvus_query(filter, limit=20, offset=0)` 通过缓存存储的异步 Milvus 客户端读取 `feishu_doc` 切片，返回含 `text` 和来源/结构字段的原始字典列表，不返回 `dense`、`sparse`，启用动态字段时额外请求 `$meta`。不执行相似度检索，不生成 score，不保证正文顺序或跨页快照一致。
+- query 的 filter 必填，空字符串允许不筛选；limit 为 1～100，offset 为 0～16383，且两者之和不得超过 16384。切片主键 `id` 与来源块 `block_id` 不同，`references[].id` 对应来源块；补查应限定已知文档及必要的版本，重建时结合 `order`、`chunk_index`、`table_row_index`。
+- 空白 question、超出分页窗口等 `ToolException` 与 Pydantic 参数校验错误作为可修复的工具错误返回；配置、模型及 Milvus 错误（含无效过滤表达式）向上传播，不伪装为空结果。工具未读取认证用户或强制限定可访问的知识空间，不能描述为已具备用户级文档授权。
+- 两个工具均沿用 `get_store()` 的首次初始化行为，可能创建或同步数据库、集合与索引；不能将整个调用过程描述为无副作用的只读操作。查询正文自身不写入数据。
+
 ## MinIO 临时链接契约
 
 - `get_bucket_file_url(bucket_name: str, bucket_filename: str)` 已加入内置注册表；每次调用使用 `config/minio_settings.py` 的连接配置创建 `MinIO`，将 `bucket_filename` 作为 `presigned_get_file_url` 的 `filename`，异步返回 URL 字符串。
@@ -32,6 +41,8 @@
 - 工具只上传产物，不改写网页资源路径；静态页面构建应支持部署子目录。
 
 ## 修改与验证
+
+`milvus_search`、`milvus_query` 当前没有专门测试；底层存储测试不能证明工具参数、注册或 Agent 自主补查链路可用。本轮仅核对源码与指令，未验证真实 Milvus、Nacos 或 Agent 工具调用。
 
 `get_bucket_file_url` 当前没有专门测试；`tests/intergrations/test_minio.py` 覆盖底层预签名 URL，但不证明工具注册、Agent 工具选择或图片展示链路可用。本轮仅核对源码与指令，未调用真实 MinIO 或 Agent 服务。
 

@@ -6,7 +6,7 @@ from deal_pilot.config.openai_settings import openai_settings
 
 class AgentModelConfig(BaseModel):
     name: str = Field(default=openai_settings.default_model)
-    thinking: bool = Field(default=True)
+    thinking: bool = Field(default=False)
     temperature: float | None = Field(default=None)
     top_p: float | None = Field(default=None)
 

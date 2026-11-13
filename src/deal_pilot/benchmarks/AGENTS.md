@@ -5,7 +5,8 @@
 - `dataset.py` 读取 Langfuse 数据集，列表按分页取全；`get_items` 返回指定数据集的条目。
 - `benchmark.py` 提供单数据集与全部数据集入口；`experiment.py` 按数据集名称选择 `EvalConfig`，未注册的数据集报错。
 - `evaluators/shared.py` 定义 `EvalConfig`、Agent 调用及 LLM 回答评分工厂；`evaluators/retrieve.py` 提供检索实验任务和评分配置。详细评分契约见 `evaluators/AGENTS.md`。实验也可由 `app/experiment_webhook.py` 触发。
-- 当前 `_config` 仅注册远程数据集名 `retrieve`；`run_all_benchmarks()` 遍历 Langfuse 全部数据集，不会过滤未注册名称，遇到未注册配置会报错。`resource/评测数据集/企业知识库_基础问答.csv` 是导入材料，文件名不自动映射到配置，也不会自动创建远程数据集。
+- 当前 `_config` 仅注册远程数据集名 `retrieve`；`run_all_benchmarks()` 遍历 Langfuse 全部数据集，不会过滤未注册名称，遇到未注册配置会报错。`resource/评测数据集` 下的基础问答和多轮命中 CSV 是导入材料，文件名不自动映射到配置，也不会自动创建远程数据集。
+- `企业知识库_多轮命中.csv` 当前只有一条“不同产品首Token延迟分别是多少？”用例，参考答案列出 A200/A400 的 12 条模型阶段 P95 记录，`related_documents` 标注 A200、A400 测试报告及衡远设计试点案例三份文档。它用于检查最终回答的覆盖与来源，不断言工具调用次数或检索轮数；本轮未导入或运行真实评测。
 
 ## 数据与追踪流程
 

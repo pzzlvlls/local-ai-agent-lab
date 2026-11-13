@@ -67,10 +67,12 @@ async def experiment_task(*, item: DatasetItem, **kwargs):
     return result["structured_response"]  # type: ignore
 
 
-create_llm_score_evaluator("correctness", lambda output: output["answer"])
-
-retrieve_eval_config = EvalConfig(
-    task=experiment_task, # type: ignore
-    evaluators=[retrieve_precision_eval, retrieve_recall_eval, create_llm_score_evaluator("correctness", lambda output: output["answer"]),
-    create_llm_score_evaluator("completeness", lambda output: output["answer"])]
+correctness_eval = create_llm_score_evaluator(
+    "correctness", lambda output: output["answer"]
 )
+
+completeness_eval = create_llm_score_evaluator(
+    "completeness", lambda output: output["answer"]
+)
+
+retrieve_eval_config = EvalConfig(task=experiment_task, evaluators=[correctness_eval, completeness_eval])  # type: ignore

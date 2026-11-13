@@ -202,4 +202,5 @@ def create_llm_score_evaluator(
             metadata={"test": {"threshold": threshold}},
         )
 
+    _evaluator.__name__ = f"{name}_eval"
     return _evaluator
